@@ -12,8 +12,9 @@
  * 這樣十條規則仍然一眼看得完，而不是十張攤開的表單。
  */
 const { PluginSettingTab, Setting, Notice, Modal } = require("obsidian");
-const { defaultSettings, EXAMPLE_DECORATIONS, PLACEHOLDERS, OPENER_KINDS } = require("./defaults.js");
+const { defaultSettings, EXAMPLE_DECORATIONS, EXAMPLE_OPENERS, PLACEHOLDERS, OPENER_KINDS } = require("./defaults.js");
 const { LOCALES } = require("../i18n/index.js");
+const { decorate } = require("../core/decorate.js");
 
 /* 分頁。加一個分頁＝在這裡加一筆，並寫一個 renderXxx。 */
 const SECTIONS = [
@@ -260,6 +261,18 @@ class YaziSettingTab extends PluginSettingTab {
     mk("+ " + this.t("settings.openers.addSystem", "Default app"), { kind: "system", label: "Open with default app" });
     mk("+ " + this.t("settings.openers.addCommand", "Command line"), { kind: "command", label: "Run command", command: "", args: [] });
     mk("+ " + this.t("settings.openers.addObsidian", "Obsidian command"), { kind: "obsidian-command", label: "Run Obsidian command", commandId: "" });
+
+    /* 範例：空白的 command opener 對新使用者太抽象（執行檔要填什麼？參數怎麼斷行？），
+       給兩個填好的範本，改兩個字就能用。 */
+    const ex = el.createDiv({ cls: "yazi-set-add" });
+    ex.createSpan({ cls: "yazi-set-add-label", text: this.t("settings.examples", "Examples:") });
+    for (const e of EXAMPLE_OPENERS) {
+      const b = ex.createEl("button", { text: e.label + (e.platform !== "all" ? " (" + e.platform + ")" : "") });
+      b.onclick = async () => {
+        s.openers.push(Object.assign(JSON.parse(JSON.stringify(e)), { id: uid() }));
+        await this.commit();
+      };
+    }
   }
 
   openerCard(list, o, i) {
@@ -396,10 +409,43 @@ class YaziSettingTab extends PluginSettingTab {
 
   /* ════════════════════ 其餘分頁（下一步接上） ════════════════════ */
 
+  /*
+   * 鍵位這一頁是**唯讀的參考**，不是編輯器。
+   *
+   * 瀏覽器**裡面**的鍵刻意不開放重綁：它們是一整套互相咬合的 vim/yazi 慣例
+   * （d/u 是半頁所以刪除才是 D、y 是複製所以複製路徑才落在 c…），單獨改一顆
+   * 會讓其他幾顆的理由消失。要改的人可以改 fork，不值得為此背一個 keymap 編輯器。
+   *
+   * 真正需要因人而異的是**怎麼叫出瀏覽器** —— 那是 Obsidian 的命令，用它原生的
+   * Hotkeys 設定綁就好，也是審查者偏好的做法。這一頁就是把那幾個命令列出來。
+   */
   renderKeys(el) {
     this.header(el, this.t("settings.section.keys", "Keys"),
-      this.t("settings.keys.desc", "Rebind any action. Multi-key sequences are supported."));
-    this.emptyHint(el, "Coming in the next step.");
+      this.t("settings.keys.desc",
+        "Keys inside the explorer are fixed — press ? in the explorer for the full list. " +
+        "What you can bind is how to open it: each entry point below is an Obsidian command, " +
+        "so give it a hotkey in Settings → Hotkeys (search for “Yazi”)."));
+
+    const CMDS = [
+      ["cmd.open", "Open file explorer (at the current file)"],
+      ["cmd.openTabs", "Open tab list"],
+      ["cmd.openBookmarks", "Open bookmarks"],
+      ["cmd.openRecent", "Open recent files"],
+      ["cmd.openFrecency", "Open frequently used"],
+      ["cmd.searchText", "Search: full text"],
+      ["cmd.searchFile", "Search: file names"],
+      ["cmd.searchDir", "Search: folders"],
+    ];
+    const box = el.createDiv({ cls: "yazi-set-cmds" });
+    for (const [key, fallback] of CMDS) {
+      const row = box.createDiv({ cls: "yazi-set-cmd-row" });
+      row.createSpan({ cls: "yazi-set-cmd-name", text: this.t(key, fallback) });
+    }
+
+    const note = el.createDiv({ cls: "yazi-set-desc" });
+    note.setText(this.t("settings.keys.note",
+      "Tip: one hotkey for the explorer is usually enough — everything else is reachable from " +
+      "inside it (T tabs, b bookmarks, gt full-text search…)."));
   }
 
   renderDecorations(el) {
@@ -466,6 +512,16 @@ class YaziSettingTab extends PluginSettingTab {
       },
     });
     const body = card.body;
+
+    /*
+     * 即時預覽：用這條規則畫一列假的檔案。
+     * 規則的 schema 是抽象的（from: map / fallback: filename…），看設定表單想像不出
+     * 結果長怎樣；畫出來就不必想像了。假資料從規則本身推導 —— 它用到哪些欄位，
+     * 就給哪些欄位一個示範值。
+     */
+    const demo = body.createDiv({ cls: "yazi-set-demo" });
+    demo.createSpan({ cls: "yazi-set-demo-label", text: this.t("settings.decorations.preview", "Looks like") });
+    this.decorationPreview(demo.createDiv({ cls: "yazi-row" }), r);
 
     new Setting(body)
       .setName(this.t("settings.decorations.name", "Name"))
@@ -536,6 +592,56 @@ class YaziSettingTab extends PluginSettingTab {
       Object.assign(r, parsed);
       await this.commit();
     };
+  }
+
+  /**
+   * 用一條規則畫一列示範。
+   * 示範用的 frontmatter 是**從規則推導**出來的：規則讀哪個欄位就給哪個欄位一個值，
+   * 所以預覽永遠跟當下的設定對得上，不必另外維護一份假資料。
+   */
+  decorationPreview(row, rule) {
+    const fm = {};
+    const put = (spec, value) => { if (spec && spec.field) fm[spec.field] = value; };
+    if (rule.when && rule.when.field) {
+      fm[rule.when.field] = Array.isArray(rule.when.in) ? rule.when.in[0] : rule.when.equals;
+    }
+    put(rule.icon, rule.icon && rule.icon.from === "map"
+      ? Object.keys((rule.icon && rule.icon.map) || {})[0] || "?"
+      : "📘");
+    put(rule.title, this.t("settings.decorations.sampleTitle", "A note title"));
+    put(rule.subtitle, this.t("settings.decorations.sampleSub", "field value"));
+    if (rule.status && rule.status.field) {
+      fm[rule.status.field] = Object.keys((rule.status.map) || {})[0] || "";
+    }
+    if (rule.priority && rule.priority.field) {
+      fm[rule.priority.field] = Object.keys((rule.priority.order) || {})[0] || "";
+    }
+
+    const names = { name: "2026-09-13.md", basename: "2026-09-13" };
+    let info = null;
+    try {
+      info = decorate(fm, [rule], names);
+    } catch (e) {
+      row.createSpan({ text: "⚠ " + e.message });
+      return;
+    }
+    if (!info) {
+      row.createSpan({ cls: "yazi-set-desc", text: this.t("settings.decorations.noMatch", "This rule matches nothing yet") });
+      return;
+    }
+    if (info.dim) row.addClass("is-fm-dim");
+    row.createSpan({ cls: "yazi-icon", text: info.icon || "·" });
+    row.createSpan({ cls: "yazi-name", text: info.title || names.name });
+    if (info.titleFromField && info.subtitle) {
+      row.createSpan({ cls: "yazi-sub is-date", text: info.subtitle });
+    }
+    if (info.status || info.prio || info.pinned || info.overdue) {
+      const tail = row.createSpan({ cls: "yazi-fm" });
+      if (info.pinned) tail.createSpan({ cls: "yazi-fm-pin", text: "📌" });
+      if (info.overdue) tail.createSpan({ cls: "yazi-fm-due", text: "⏰" });
+      if (info.status) tail.createSpan({ cls: "yazi-fm-status", text: info.status });
+      if (info.prio) tail.createSpan({ cls: "yazi-fm-prio", text: info.prio });
+    }
   }
 
   /** icon / title / subtitle 共用的「來源」設定列。 */

@@ -1,14 +1,17 @@
 # Yazi Explorer for Obsidian
 
-**A keyboard-driven file explorer for Obsidian — miller columns, live preview, and fully rebindable keys.**
-Inspired by [yazi](https://github.com/sxyazi/yazi), [ranger](https://github.com/ranger/ranger), `lf` and `nnn`.
+**A keyboard-driven file explorer for Obsidian — miller columns, live preview, fuzzy and full-text
+search.** Inspired by [yazi](https://github.com/sxyazi/yazi), [ranger](https://github.com/ranger/ranger),
+`lf` and `nnn`.
 
 If you navigate your vault from the sidebar file tree with a mouse, this is the replacement: a floating
-three-column browser that opens on the file you are editing, and that you never have to take your hands
-off the keyboard to use.
+three-column browser that opens on the file you are already editing, and that you never have to take
+your hands off the keyboard to use.
 
-> **Status:** early. The plugin has been in daily use in a 5000-note vault, but the public API
-> (settings schema, action ids) may still change before 1.0.
+![The explorer: parent folder, current folder, and a live preview](docs/images/overview.png)
+
+> **Status:** early. In daily use in a 5000-note vault, but the settings schema may still change
+> before 1.0.
 
 ---
 
@@ -19,108 +22,242 @@ makes three things awkward, and this plugin exists for those three:
 
 | | Built-in File Explorer | Yazi Explorer |
 |---|---|---|
-| **Seeing where you are** | one narrow column, deep folders scroll horizontally | **miller columns**: parent / current / preview, always three levels of context |
-| **Deciding "is this the file?"** | file names only | **live preview** of the file next to the list — rendered markdown, images, tables |
-| **Getting there** | click, scroll, expand | `j` `k` `h` `l`, fuzzy file/folder search, full-text search, bookmarks, "frequently used" |
+| **Seeing where you are** | one narrow column; deep folders scroll sideways | **miller columns** — parent / current / preview, three levels of context at all times |
+| **Deciding “is this the file?”** | file names only | **live preview** beside the list: rendered markdown, tables, images, frontmatter |
+| **Getting there** | click, scroll, expand | `j` `k` `h` `l`, fuzzy file/folder search, full-text search, bookmarks, frequently-used |
 
-It is not a replacement for Quick Switcher (which is great at "I know the name"). It is for
-*"I want to look around"* — browsing, comparing, moving files, and operating on a batch of them.
-
-## Features
-
-- **Miller columns** — parent, current folder, and a preview pane, like yazi / ranger / Midnight Commander.
-- **Live preview** — markdown rendered the way Reading view renders it (tables, headings, mermaid),
-  images, and a metadata panel for frontmatter. Plugin blocks (dataviewjs, tasks, meta-bind, …) are
-  stripped before rendering, so browsing never executes anything.
-- **Vim-style keys** — `j/k/h/l`, `gg/G`, `d/u`, visual selection with `v`, `y`/`x`/`p` to copy, cut
-  and paste files. **Every key is rebindable.**
-- **Search** — fuzzy file name, fuzzy folder name, and full-text search with highlighted hits and
-  context lines. Searches can be narrowed with frontmatter conditions you define.
-- **Bookmarks and frecency** — jump to a folder with a single letter, or open the list of the places
-  you actually use.
-- **Multi-select across folders** — select here, walk somewhere else, select more, then move the lot.
-- **Custom openers** — open the file under the cursor with *anything*: your editor, a terminal, the
-  system file manager, or any command line you configure. This is the yazi `O` menu, in Obsidian.
-- **Works on mobile** for everything that does not need a shell.
+It is not a replacement for Quick Switcher, which is excellent at *“I know the name.”* This is for
+*“I want to look around”* — browsing, comparing, moving files, and acting on a batch of them.
 
 ## Install
 
-Not in the community plugin list yet. To try it now:
+Not in the community plugin list yet.
 
-1. Download `main.js`, `manifest.json` and `styles.css` from the
-   [latest release](https://github.com/vi000246/obsidian-yazi/releases).
-2. Put them in `<your vault>/.obsidian/plugins/yazi-explorer/`.
-3. Reload Obsidian and enable **Yazi Explorer** in *Settings → Community plugins*.
+**With [BRAT](https://github.com/TfTHacker/obsidian42-brat)** (recommended — you get updates):
+add the beta plugin `vi000246/obsidian-yazi`.
 
-Or install with [BRAT](https://github.com/TfTHacker/obsidian42-brat) using `vi000246/obsidian-yazi`.
+**By hand:** download `main.js`, `manifest.json` and `styles.css` from the
+[latest release](https://github.com/vi000246/obsidian-yazi/releases), drop them in
+`<vault>/.obsidian/plugins/yazi-explorer/`, reload Obsidian, and enable the plugin.
 
-## Getting started
+## The first 60 seconds
 
-Open it with the command **“Yazi Explorer: open”** (bind it to a hotkey — `Alt+E` works well), then
-press `?` for the key list.
-
-The 20-second version:
+1. Open *Settings → Hotkeys*, search for **Yazi**, and give **“Open file explorer”** a key.
+   `Alt+E` is a good one. (Everything else is reachable from inside, so one hotkey is enough.)
+2. Press it. The explorer opens **on the file you are editing**, with that folder around it.
+3. Press `?` to see every key.
 
 ```
-j / k      down / up                l / Enter   open (folder → enter)
-h          up one folder            o           open in Obsidian
-gg / G     top / bottom             O           open with… (external programs)
-gf / gd    fuzzy file / folder      gt          full-text search
-Space      select                   y x p       copy / cut / paste
-/          filter this folder       ?           help
+j / k      down / up               l / Enter / o   folder → enter, file → open
+h          up one folder           t               open in a new tab
+gg / G     first / last            s / i           open in a split
+d / u      half page               q / Esc         close
 ```
+
+## Using it
+
+### Moving and opening
+
+`h` and `l` walk up and down the tree; the left column always shows where you came from and the right
+one shows what you are about to open. `gg` / `G` jump to the ends, `d` / `u` move half a page (that is
+the Surfingkeys convention — `D` is delete, not `d`).
+
+`o`, `l` and `Enter` all open. `t` opens in a new tab and closes the explorer; `gb` opens in a
+background tab and **keeps the explorer open**, so you can queue up several files and then carry on.
+`s` and `i` open in a vertical or horizontal split.
+
+### The preview pane
+
+The right column renders markdown the way Reading view does — headings, tables, mermaid diagrams —
+so you can tell whether it is the file you wanted without opening it.
+
+Plugin blocks (`dataviewjs`, `tasks`, `meta-bind`, `query`, …) are **stripped before rendering**, and
+note embeds are replaced with a placeholder. Browsing never executes anything from your vault. Toggle
+between rendered and raw text with `,p`.
+
+Scroll the preview without moving the cursor: `J` / `K` (five lines), `^e` / `^y` (one line),
+`^d` / `^u` (half a page), `^f` / `^b` or `PageDown` / `PageUp` (a page). **The mouse wheel scrolls
+the preview wherever the pointer happens to be**, so you never have to move the mouse into it.
+
+![Preview pane rendering a table, with the which-key popup open](docs/images/preview.png)
+
+### Finding things
+
+| | |
+|---|---|
+| `/` | filter the folder you are in |
+| `gf` | fuzzy search file names, whole vault |
+| `gd` | fuzzy search folder names |
+| `gt` | full-text search, with the matching lines shown in the preview |
+
+Search has no syntax to memorise. You type words; **conditions come from a menu**. Press `Tab` in the
+search card to add one — folder, tag, extension, or any frontmatter field you configured. Each
+condition becomes a visible chip you can remove, rather than something hidden inside a query string.
+The candidate values are read from your vault and come with counts, so you only ever see values that
+actually exist, and a typo shows up as “only 1 note has this”.
+
+Searches always have a scope, shown as a chip. `^f` changes it, offering candidates from widest to
+narrowest: whole vault → each folder above → where you started → each folder below.
+
+![Full-text search: hits with context, conditions as chips](docs/images/search.png)
+
+### Working with files
+
+Selection survives folder changes: `Space` selects and moves down, `v` / `V` select a range, `^a` /
+`^r` select all or invert. Walk somewhere else, select more, then act on the lot.
+
+`y` copies, `x` cuts, `p` pastes, `P` pastes over a same-named file. Cut-then-paste is a move, and it
+goes through Obsidian, so your `[[links]]` follow the file. `a` / `A` create a note or a folder, `R`
+renames, `D` deletes to the system trash (it asks first, and deletes the whole selection).
+
+Copy paths with `cc` (absolute), `cd` (its folder), `cf` (file name), `cn` (name without extension),
+`cr` (vault-relative — what `[[links]]` use).
+
+### Bookmarks, tabs and frequently used
+
+`m` bookmarks the item under the cursor, `M` the current folder. In the bookmark list, `m` plus a
+letter assigns a shortcut, and then `'` plus that letter jumps there from anywhere.
+
+`T` lists open tabs, `b` bookmarks, `rf` recent files, and `z` shows **frequently used** — folders you
+visit and files you open, ranked together by how often and how recently.
+
+### Opening things outside Obsidian
+
+`O` opens a menu of **openers**, and the menu changes depending on whether a file or a folder is under
+the cursor. Out of the box you get “default app”, “open the folder” and “show in the file manager”.
+Everything else you configure — see below.
 
 ## Configuration
 
-Everything below is in *Settings → Yazi Explorer*, and every section can be exported/imported as JSON
-so you can share a setup:
+*Settings → Yazi Explorer*. Every section exports and imports as JSON, so a setup can be shared.
 
-- **Keys** — rebind any action. Multi-key sequences (`g g`, `c c`) are supported and show a
-  which-key style popup while you type them.
-- **Openers** — the `O` menu. Each entry is a label, a key, what it applies to (files, folders,
-  extensions) and an action: open with the system default app, reveal in the file manager, run an
-  Obsidian command, or run a command line with `{{path}}`-style placeholders. Desktop only for the
-  command-line kind.
-- **Row decorations** — show frontmatter in the file list: an icon from a field, a different title,
-  a right-aligned secondary column, status tails. Driven by rules you write, not by hardcoded
-  conventions.
-- **Search fields** — which frontmatter fields become search conditions.
-- **Index** — the full-text search index: on/off, size caps, excluded folders.
+![The settings tab: sections on the left, rule cards on the right](docs/images/settings.png)
+
+### Openers — the `O` menu
+
+Each opener is a label, a key, what it applies to, and an action:
+
+| Action | What it does | Mobile |
+|---|---|---|
+| `system` | hand the path to the OS (default app for files, file manager for folders) | ✓ |
+| `reveal` | show it in the file manager, selected | ✓ |
+| `obsidian-command` | open the file, then run an Obsidian command by id | ✓ |
+| `command` | run a command line | desktop only |
+
+`command` openers take an **executable** and a list of **arguments, one per line**. Each line is passed
+as a single argument, so paths containing spaces need no quoting or escaping. Placeholders:
+`{{path}}`, `{{dir}}`, `{{relPath}}`, `{{name}}`, `{{basename}}`, `{{ext}}`, `{{vaultPath}}`,
+`{{vaultName}}`.
+
+<details>
+<summary>Example: open the file in VS Code (key <code>e</code>)</summary>
+
+```
+Label       Visual Studio Code
+Key         e
+Applies to  Files only
+Action      command
+Executable  code
+Arguments   --reuse-window
+            {{path}}
+```
+</details>
+
+<details>
+<summary>Example: a terminal in that folder (key <code>t</code>, Windows)</summary>
+
+```
+Label       Terminal
+Key         t
+Applies to  Files and folders
+Platform    Windows
+Action      command
+Executable  wt.exe
+Arguments   -d
+            {{dir}}
+```
+Use `Platform` when the command differs per OS: add one entry per platform with the same key, and
+each one only appears on its own platform.
+</details>
+
+### Row decorations — frontmatter in the file list
+
+A rule says *“when this frontmatter field has this value, draw the row like this.”* It can replace the
+bullet with an icon, replace the file name with a field, put a field on the right, add status badges,
+and dim or pin rows.
+
+<details>
+<summary>Example: a diary where the file name is a date</summary>
+
+```
+Applies when   type = diary
+Icon           field → mood        (the emoji you recorded that day)
+Title          field → title       fallback: filename
+Secondary      basename            (the date, small, on the right)
+```
+`2026-09-13.md` then reads as `🤩  A weekend in Jiufen          2026-09-13`.
+</details>
+
+<details>
+<summary>Example: tasks with status and priority</summary>
+
+Icon from a `kind` field via a lookup table, a status badge with a sort order, and low priorities
+hidden because drawing them on every row is noise. The status table, priority order, dim/pin
+conditions and the preview-panel field order live in the **Advanced (JSON)** box of the rule —
+they are nested data, and a form for them would be thirty input boxes.
+</details>
+
+A value that is filled in but missing from your lookup table is drawn as `❓` plus the raw value. That
+is deliberate: it makes drift visible instead of quietly falling back to a normal-looking icon.
+
+### Search fields
+
+Which frontmatter fields become search conditions, each with a direct key (pressed with `Ctrl` while
+searching) and an icon.
+
+### Preview and index
+
+Render on/off, render delay, scroll step, wheel behaviour, cursor wrap-around, half-page size, and the
+interface language. The full-text index has its own section: on/off, a file-size cap, excluded
+folders, how large the cache currently is, and a button to clear it.
 
 ## Compatibility and what it touches
 
-- **Desktop and mobile.** Everything works on mobile except openers of the *command line* kind,
-  which spawn an external process; those are filtered out of the menu there.
-- **Node / Electron APIs.** Only two, both loaded lazily and only on desktop:
-  `child_process.spawn` for command openers, and Electron's `shell` for "open with the default
-  app" and "show in the file manager". Obsidian exposes no public API for either.
-- **Nothing is executed while you browse.** Preview strips dataviewjs, tasks, meta-bind, query and
-  similar blocks before rendering, replaces note embeds with a placeholder, and never evaluates
-  anything from your vault.
-- **Full-text index.** Stored in this plugin's folder under `.obsidian`. Size and excluded folders
-  are configurable, and the settings tab shows how large it is with a button to clear it.
+- **Desktop and mobile.** Everything works on mobile except `command` openers, which spawn an external
+  process; those are filtered out of the menu there.
+- **Node / Electron APIs.** Two, both loaded lazily and only on desktop: `child_process.spawn` for
+  command openers, and Electron's `shell` for “default app” and “show in the file manager”. Obsidian
+  exposes no public API for either.
+- **Nothing from your vault is executed.** Preview strips plugin blocks before rendering and never
+  evaluates anything.
+- **The full-text index** lives in this plugin's folder under `.obsidian`. It is built the first time
+  you use `gt`, and the settings tab shows its size with a button to clear it.
 
 ## Development
 
 ```bash
 npm install
 cp .env.local.example .env.local   # point it at your vault's plugin folder
-npm run dev                        # watch + copy into the vault
-npm test                           # node test suite, no Obsidian required
+npm run dev                        # watch, and copy the build into that vault
+npm test                           # node test suite — no Obsidian required
 npm run build                      # production build
 ```
 
-The source is plain JavaScript (not TypeScript) on purpose: the code carries a lot of *why* in its
-comments and a type-driven rewrite would churn all of it. Types come from JSDoc where they help.
+The source is plain JavaScript on purpose: the code carries a lot of *why* in its comments, and a
+type-driven rewrite would churn all of it.
 
-`src/` is bundled by esbuild into `main.js`. Tests stub the Obsidian API, so they run in plain Node
-and cover the parts worth covering: key dispatch, preview sanitising, opener resolution, path
-handling, and settings migration.
+`src/` is bundled by esbuild into `main.js`. The tests stub the Obsidian API so they run in plain Node,
+and cover the things worth covering: key dispatch, preview sanitising, opener resolution and command
+building, path handling across platforms, decoration rules, and the i18n invariants (no orphan keys,
+matching placeholders, every key used in code exists in English).
+
+Translations live in `src/i18n/`. English is the reference; a language file may be incomplete and
+anything missing falls back to English.
 
 ## Credits
 
-The interaction model is lifted wholesale from [yazi](https://github.com/sxyazi/yazi) by sxyazi.
-This plugin is not affiliated with that project.
+The interaction model is lifted wholesale from [yazi](https://github.com/sxyazi/yazi) by sxyazi. This
+plugin is not affiliated with that project.
 
 ## License
 

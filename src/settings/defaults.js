@@ -73,6 +73,50 @@ const DEFAULT_OPENERS = [
  */
 const DEFAULT_DECORATIONS = [];
 
+/*
+ * 設定頁「加入範例」用的 opener。不是預設值 —— 預設值只能放每台機器都成立的東西，
+ * 而 code / wt.exe 這些是「你裝了才有」。做成一鍵帶入的範本：新使用者看得到一條
+ * command opener 長什麼樣（執行檔 ＋ 一行一個參數 ＋ 佔位字），改兩個字就能用。
+ */
+const EXAMPLE_OPENERS = [
+  {
+    id: "example-vscode",
+    label: "Visual Studio Code",
+    key: "e",
+    appliesTo: "file",
+    extensions: [],
+    platform: "all",
+    kind: "command",
+    command: "code",
+    args: ["--reuse-window", "{{path}}"],
+    enabled: true,
+  },
+  {
+    id: "example-terminal-win",
+    label: "Terminal",
+    key: "t",
+    appliesTo: "both",
+    extensions: [],
+    platform: "win",
+    kind: "command",
+    command: "wt.exe",
+    args: ["-d", "{{dir}}"],
+    enabled: true,
+  },
+  {
+    id: "example-terminal-mac",
+    label: "Terminal",
+    key: "t",
+    appliesTo: "both",
+    extensions: [],
+    platform: "mac",
+    kind: "command",
+    command: "/usr/bin/open",
+    args: ["-a", "Terminal", "{{dir}}"],
+    enabled: true,
+  },
+];
+
 /** 設定頁「加入範例」用的。不是預設值，使用者按了才會進他的設定。 */
 const EXAMPLE_DECORATIONS = [
   {
@@ -171,6 +215,7 @@ module.exports = {
   PLACEHOLDERS,
   OPENER_KINDS,
   DEFAULT_OPENERS,
+  EXAMPLE_OPENERS,
   DEFAULT_DECORATIONS,
   EXAMPLE_DECORATIONS,
   DEFAULT_FACETS,

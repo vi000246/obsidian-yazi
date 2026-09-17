@@ -1132,3 +1132,50 @@ input.yazi-input {
 
 .yazi-set-adv .yazi-set-desc { margin: 2px 0 6px; }
 .yazi-set-adv textarea { margin-bottom: 6px; }
+
+/* 規則卡裡的「畫出來像這樣」：用真的 .yazi-row 樣式畫一列示範 —— 規則的 schema
+   是抽象的，看表單想像不出結果，畫出來就不必想像。 */
+.yazi-set-demo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 4px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--background-secondary);
+}
+
+.yazi-set-demo-label {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.yazi-set-demo .yazi-row {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--background-primary);
+  border-radius: 4px;
+}
+
+.yazi-set-add-label {
+  align-self: center;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+/* 鍵位頁的命令清單 */
+.yazi-set-cmds {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 8px 0;
+}
+
+.yazi-set-cmd-row {
+  padding: 5px 10px;
+  border-radius: 5px;
+  background: var(--background-secondary);
+}
+
+.yazi-set-cmd-name { font-family: var(--font-monospace); font-size: var(--font-ui-smaller); }
