@@ -1228,3 +1228,25 @@ input.yazi-input {
   font-size: var(--font-ui-smaller);
   color: var(--text-error);
 }
+
+/* 鍵位覆寫的狀態列：打字的當下就回答「我設對了嗎」。
+   只顯示錯誤是不夠的 —— 沒有錯誤訊息時，人分不出「設定成功」與「根本沒被讀到」。 */
+.yazi-set-km-status {
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: var(--font-ui-smaller);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+}
+
+.yazi-set-km-status.is-ok {
+  color: var(--text-success, var(--text-accent));
+}
+
+.yazi-set-km-status.is-warn {
+  color: var(--text-warning, var(--text-error));
+}
+
+.yazi-set-km-status.is-idle {
+  color: var(--text-faint);
+}

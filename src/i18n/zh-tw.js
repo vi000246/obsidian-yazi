@@ -89,7 +89,7 @@ module.exports = {
   "settings.openers.kind.obsidian": "Obsidian 命令",
 
   /* ── 設定：鍵位 ── */
-  "settings.keys.desc": "任何動作都能改鍵，支援多鍵序列（例如 g g）。",
+  "settings.keys.desc": "瀏覽器裡的鍵位是固定的——在瀏覽器裡按 ? 看完整清單。下面這幾個命令可以在「設定 → 快捷鍵」綁熱鍵。",
 
   /* ── 設定：列裝飾 ── */
   "settings.decorations.desc": "用 frontmatter 決定一列長什麼樣：圖示、換成別的標題、右側的次要欄位。",
@@ -388,7 +388,6 @@ module.exports = {
   "settings.index.clear": "清除快取",
   "settings.index.cleared": "已清除索引快取",
   "settings.examples": "範例：",
-  "settings.keys.note": "小訣竅：通常只需要綁「開啟瀏覽器」一顆鍵，其餘從裡面都到得了（T 分頁、b 書籤、gt 全文搜尋…）。",
   "settings.decorations.preview": "畫出來像這樣",
   "settings.decorations.sampleTitle": "一篇筆記的標題",
   "settings.decorations.sampleSub": "欄位的值",
@@ -422,15 +421,11 @@ module.exports = {
   "settings.search.kind.ext": "副檔名",
   "settings.search.kind.free": "自由輸入",
   "settings.search.kind.fm": "frontmatter",
-  "settings.keys.remap": "覆寫瀏覽器裡的鍵位",
-  "settings.keys.remapDesc": "內建鍵位是一整套互相咬合的慣例（d/u 是半頁所以刪除才是 D、y 是複製檔案所以複製路徑才落在 c）。所以這裡不做完整的 keymap 編輯器，而是讓你把一顆鍵**當成另一顆鍵**——跟 Surfingkeys 的 map 同一個概念。注意：把 x 映到 d 之後，x 原本的動作就沒有鍵了，除非你再映一顆過去；vim 的 remap 也是這個語意。",
-  "settings.keys.syntax": "語法",
-  "settings.keys.ex1": "按 J 等於按 g 再按 t（全文搜尋）",
-  "settings.keys.ex2": "按 w 等於按 O",
-  "settings.keys.ex3": "S 不做任何事",
-  "settings.keys.ex4": "註解",
-  "settings.keys.ex5": "打不出來的鍵；另有 <Up> <Down> <PageUp> <PageDown> <Backspace>",
   "settings.keys.badLines": "這幾行沒有生效：",
-  "settings.keys.overrides": "覆寫",
-  "settings.keys.limits": "覆寫只作用在瀏覽狀態，**打字時（篩選、搜尋、重新命名）一律不生效**。書籤的快捷字母（’ 與 m 之後那一顆）也不受影響，所以每個字母都還能拿來當書籤捷徑。Ctrl 組合鍵無法覆寫。",
+  "settings.keys.overrides": "覆寫鍵位",
+  "settings.keys.remapShort": "讓一顆鍵當成另一顆鍵用。左邊只能一顆；右邊可以是一顆或一串。",
+  "settings.keys.remapNote": "不受影響的：打字時、書籤字母、Ctrl 組合鍵。完整鍵位清單見 README。",
+  "settings.keys.statusNone": "沒有覆寫，照內建鍵位。",
+  "settings.keys.statusActive": "{count} 條生效",
+  "settings.keys.statusNothing": "沒有任何一條生效。",
 };

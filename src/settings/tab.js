@@ -411,23 +411,18 @@ class YaziSettingTab extends PluginSettingTab {
   /* ════════════════════ 其餘分頁（下一步接上） ════════════════════ */
 
   /*
-   * 鍵位這一頁是**唯讀的參考**，不是編輯器。
-   *
-   * 瀏覽器**裡面**的鍵刻意不開放重綁：它們是一整套互相咬合的 vim/yazi 慣例
-   * （d/u 是半頁所以刪除才是 D、y 是複製所以複製路徑才落在 c…），單獨改一顆
-   * 會讓其他幾顆的理由消失。要改的人可以改 fork，不值得為此背一個 keymap 編輯器。
-   *
-   * 真正需要因人而異的是**怎麼叫出瀏覽器** —— 那是 Obsidian 的命令，用它原生的
-   * Hotkeys 設定綁就好，也是審查者偏好的做法。這一頁就是把那幾個命令列出來。
+   * 鍵位頁刻意短。
+   * 內建鍵位為什麼不開放逐顆重綁、remap 的語意與限制 —— 那些寫在 README，
+   * 設定頁只留「現在能做什麼」與一個看了就會寫的範例。設定頁不是讀文件的地方。
    */
   renderKeys(el) {
     this.header(el, this.t("settings.section.keys", "Keys"),
       this.t("settings.keys.desc",
-        "Keys inside the explorer are fixed — press ? in the explorer for the full list. " +
-        "What you can bind is how to open it: each entry point below is an Obsidian command, " +
-        "so give it a hotkey in Settings → Hotkeys (search for “Yazi”)."));
+        "Keys inside the explorer are fixed — press ? in the explorer for the list. " +
+        "Give these commands a hotkey in Settings → Hotkeys."));
 
-    const CMDS = [
+    const box = el.createDiv({ cls: "yazi-set-cmds" });
+    for (const [key, fallback] of [
       ["cmd.open", "Open file explorer (at the current file)"],
       ["cmd.openTabs", "Open tab list"],
       ["cmd.openBookmarks", "Open bookmarks"],
@@ -436,45 +431,37 @@ class YaziSettingTab extends PluginSettingTab {
       ["cmd.searchText", "Search: full text"],
       ["cmd.searchFile", "Search: file names"],
       ["cmd.searchDir", "Search: folders"],
-    ];
-    const box = el.createDiv({ cls: "yazi-set-cmds" });
-    for (const [key, fallback] of CMDS) {
-      const row = box.createDiv({ cls: "yazi-set-cmd-row" });
-      row.createSpan({ cls: "yazi-set-cmd-name", text: this.t(key, fallback) });
-    }
-
-    const note = el.createDiv({ cls: "yazi-set-desc" });
-    note.setText(this.t("settings.keys.note",
-      "Tip: one hotkey for the explorer is usually enough — everything else is reachable from " +
-      "inside it (T tabs, b bookmarks, gt full-text search…)."));
-
-    /* ── 覆寫 ── */
-    el.createEl("h3", { text: this.t("settings.keys.remap", "Remapping keys inside the explorer") });
-    const desc = el.createEl("p", { cls: "yazi-set-desc" });
-    desc.setText(this.t("settings.keys.remapDesc",
-      "The built-in keys are an interlocking set (d/u are half-page, so delete is D; y yanks files, " +
-      "so copying a path lives under c). Rather than a full keymap editor, you can alias one key to " +
-      "another — the same idea as Surfingkeys' map. Note that mapping x to d leaves x's own action " +
-      "without a key until you map something to it; that is how vim remapping works too."));
-
-    const syntax = el.createDiv({ cls: "yazi-set-ph" });
-    syntax.createSpan({ cls: "yazi-set-ph-title", text: this.t("settings.keys.syntax", "Syntax") });
-    for (const [code, what] of [
-      ["map J gt", this.t("settings.keys.ex1", "J now does what g then t did (full-text search)")],
-      ["map w O", this.t("settings.keys.ex2", "w now does what O did")],
-      ["unmap S", this.t("settings.keys.ex3", "S does nothing")],
-      ["# …", this.t("settings.keys.ex4", "a comment")],
-      ["<Space> <Enter> <Esc> <Tab>", this.t("settings.keys.ex5", "keys you cannot type; also <Up> <Down> <PageUp> <PageDown> <Backspace>")],
     ]) {
-      const row = syntax.createDiv({ cls: "yazi-set-ph-row" });
-      row.createEl("code", { text: code });
-      row.createSpan({ text: what });
+      box.createDiv({ cls: "yazi-set-cmd-row" }).createSpan({ cls: "yazi-set-cmd-name", text: this.t(key, fallback) });
     }
 
+    /*
+     * 狀態列：打字的當下就回答「我設對了嗎」。
+     * 三種狀態都要講清楚 —— 沒設定、生效幾條（並列出實際結果）、哪幾行沒生效。
+     * 只顯示錯誤是不夠的：沒有錯誤訊息時，人分不出「設定成功」與「根本沒被讀到」。
+     */
     const errBox = el.createDiv({ cls: "yazi-set-km-errors" });
     const showErrors = (text) => {
       errBox.empty();
-      const { errors } = parseKeymap(text);
+      const { map, unmap, errors } = parseKeymap(text);
+      const pairs = Object.entries(map).map(([from, to]) => from + " → " + to.join(""));
+      const offs = Object.keys(unmap).map((k) => k + " ✕");
+      const active = pairs.concat(offs);
+
+      const status = errBox.createDiv({ cls: "yazi-set-km-status" });
+      if (!String(text || "").trim()) {
+        status.addClass("is-idle");
+        status.setText(this.t("settings.keys.statusNone", "No overrides — using the built-in keys."));
+      } else if (active.length) {
+        status.addClass(errors.length ? "is-warn" : "is-ok");
+        status.setText((errors.length ? "⚠ " : "✓ ") +
+          this.t("settings.keys.statusActive", "{count} in effect", { count: active.length }) +
+          "　" + active.join("　"));
+      } else {
+        status.addClass("is-warn");
+        status.setText("⚠ " + this.t("settings.keys.statusNothing", "Nothing is in effect."));
+      }
+
       if (!errors.length) return;
       errBox.createDiv({ cls: "yazi-set-warn", text: this.t("settings.keys.badLines", "These lines were ignored:") });
       for (const e of errors) {
@@ -482,28 +469,28 @@ class YaziSettingTab extends PluginSettingTab {
       }
     };
 
-    new Setting(el)
-      .setName(this.t("settings.keys.overrides", "Overrides"))
-      .addTextArea((ta) => {
-        ta.inputEl.rows = 8;
-        ta.inputEl.addClass("yazi-set-args");
-        ta.setPlaceholder("map J gt\nunmap S")
-          .setValue(this.plugin.settings.keymap || "")
-          .onChange(async (v) => {
-            this.plugin.settings.keymap = v;
-            showErrors(v);
-            await this.save();
-          });
-      });
+    const set = new Setting(el)
+      .setName(this.t("settings.keys.overrides", "Remap keys"))
+      .setDesc(this.t("settings.keys.remapShort",
+        "Make one key behave as another. Left: one key. Right: a key or a sequence."));
+    /* 範例直接當 placeholder：空白時就是教學，開始打字就讓位 */
+    set.addTextArea((ta) => {
+      ta.inputEl.rows = 6;
+      ta.inputEl.addClass("yazi-set-args");
+      ta.setPlaceholder(["# J does what gt does", "map J gt", "map w O", "unmap S"].join("\n"))
+        .setValue(this.plugin.settings.keymap || "")
+        .onChange(async (v) => {
+          this.plugin.settings.keymap = v;
+          showErrors(v);
+          await this.save();
+        });
+    });
     showErrors(this.plugin.settings.keymap || "");
 
-    /* 兩個不受覆寫影響的地方值得明講，不然會以為是壞掉 */
-    const limits = el.createDiv({ cls: "yazi-set-desc" });
-    limits.setText(this.t("settings.keys.limits",
-      "Overrides apply only while navigating — never while you are typing in the filter or search box. " +
-      "Bookmark letters (' and m) are also left alone, so every letter stays available as a bookmark shortcut. " +
-      "Ctrl combinations cannot be remapped."));
+    el.createDiv({ cls: "yazi-set-desc", text: this.t("settings.keys.remapNote",
+      "Not affected: typing, bookmark letters, Ctrl combinations. See the README for the full key list.") });
   }
+
 
   renderDecorations(el) {
     const s = this.plugin.settings;

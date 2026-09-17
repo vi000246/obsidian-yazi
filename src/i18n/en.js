@@ -98,7 +98,7 @@ module.exports = {
   "settings.openers.kind.obsidian": "Obsidian command",
 
   /* ── settings: keys ── */
-  "settings.keys.desc": "Rebind any action. Multi-key sequences are supported.",
+  "settings.keys.desc": "Keys inside the explorer are fixed — press ? in the explorer for the list. Give these commands a hotkey in Settings → Hotkeys.",
 
   /* ── settings: decorations ── */
   "settings.decorations.desc":
@@ -404,7 +404,6 @@ module.exports = {
   "settings.index.clear": "Clear cache",
   "settings.index.cleared": "Index cache cleared",
   "settings.examples": "Examples:",
-  "settings.keys.note": "Tip: one hotkey for the explorer is usually enough — everything else is reachable from inside it (T tabs, b bookmarks, gt full-text search…).",
   "settings.decorations.preview": "Looks like",
   "settings.decorations.sampleTitle": "A note title",
   "settings.decorations.sampleSub": "field value",
@@ -438,15 +437,11 @@ module.exports = {
   "settings.search.kind.ext": "extension",
   "settings.search.kind.free": "free text",
   "settings.search.kind.fm": "frontmatter",
-  "settings.keys.remap": "Remapping keys inside the explorer",
-  "settings.keys.remapDesc": "The built-in keys are an interlocking set (d/u are half-page, so delete is D; y yanks files, so copying a path lives under c). Rather than a full keymap editor, you can alias one key to another — the same idea as Surfingkeys’ map. Note that mapping x to d leaves x’s own action without a key until you map something to it; that is how vim remapping works too.",
-  "settings.keys.syntax": "Syntax",
-  "settings.keys.ex1": "J now does what g then t did (full-text search)",
-  "settings.keys.ex2": "w now does what O did",
-  "settings.keys.ex3": "S does nothing",
-  "settings.keys.ex4": "a comment",
-  "settings.keys.ex5": "keys you cannot type; also <Up> <Down> <PageUp> <PageDown> <Backspace>",
   "settings.keys.badLines": "These lines were ignored:",
-  "settings.keys.overrides": "Overrides",
-  "settings.keys.limits": "Overrides apply only while navigating — never while you are typing in the filter or search box. Bookmark letters (’ and m) are also left alone, so every letter stays available as a bookmark shortcut. Ctrl combinations cannot be remapped.",
+  "settings.keys.overrides": "Remap keys",
+  "settings.keys.remapShort": "Make one key behave as another. Left: one key. Right: a key or a sequence.",
+  "settings.keys.remapNote": "Not affected: typing, bookmark letters, Ctrl combinations. See the README for the full key list.",
+  "settings.keys.statusNone": "No overrides — using the built-in keys.",
+  "settings.keys.statusActive": "{count} in effect",
+  "settings.keys.statusNothing": "Nothing is in effect.",
 };
