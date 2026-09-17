@@ -81,7 +81,7 @@ const EXAMPLE_DECORATIONS = [
     when: { field: "type", equals: "diary" },
     icon: { from: "field", field: "mood" },
     title: { from: "field", field: "title", fallback: "filename" },
-    subtitle: { from: "filename" },
+    subtitle: { from: "basename" },
     tail: [],
     enabled: true,
   },

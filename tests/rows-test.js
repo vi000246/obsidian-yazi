@@ -5,7 +5,7 @@ const stub = { obsidian: { Plugin: class {}, PluginSettingTab: class { construct
   Platform: { isWin: true, isDesktopApp: true }, prepareFuzzySearch: null } };
 const orig = Module._load;
 Module._load = function (req) { return stub[req] || orig.apply(this, arguments); };
-const { YaziModal, setFmApp } = require(require("./_probe.js").probePath()).__test;
+const { YaziModal, setFmApp, setFmRules } = require(require("./_probe.js").probePath()).__test;
 
 const el = (cls) => ({ cls: cls || "", text: "", children: [],
   createDiv(o) { const c = el((o && o.cls) || ""); if (o && o.text) c.text = o.text; this.children.push(c); return c; },
@@ -18,6 +18,14 @@ const file = (p) => ({ path: p, name: p.split("/").pop(),
 
 const fmOf = new Map();
 setFmApp({ metadataCache: { getFileCache: (f) => ({ frontmatter: fmOf.get(f.path) || null }) } });
+
+/* 裝飾規則現在是設定裡的資料 —— 這一條就是「日記」那條 */
+setFmRules([{
+  id: "diary", enabled: true, when: { field: "type", equals: "diary" },
+  icon: { from: "field", field: "mood" },
+  title: { from: "field", field: "title", fallback: "filename" },
+  subtitle: { from: "basename" },
+}]);
 
 const mk = () => Object.assign(Object.create(YaziModal.prototype), { sel: new Set(), clip: () => null, cwd: { path: "/" } });
 const dump = (row) => row.children.map((c) => (c.cls.trim() || "?") + ":" + c.text);

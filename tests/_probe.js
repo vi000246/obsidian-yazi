@@ -20,9 +20,9 @@ const SRC = path.join(__dirname, "..", "src", "main.js");
 
 /* 想從 main.js 裡挖出來測的東西。加新的測試對象就加在這裡。 */
 const EXPOSED = [
-  "absPath", "myconfigScript", "wheelPx", "moodOf",
-  "OPEN_ACTIONS", "PENDING_MENUS", "PREVIEW_SCROLL_KEYS", "HALF_PAGE", "HELP", "SORTS",
-  "stripPluginNoise", "stripForRender", "diaryInfo", "fmInfo",
+  "absPath", "wheelPx",
+  "PENDING_MENUS", "PREVIEW_SCROLL_KEYS", "HALF_PAGE", "HELP", "SORTS",
+  "stripPluginNoise", "stripForRender", "fmInfo",
   "YaziModal", "isFolder", "sortFiles",
 ];
 
@@ -36,8 +36,9 @@ function probePath() {
      就讓所有測試一起變成 ReferenceError（那會蓋掉真正的失敗訊息）。 */
   const names = EXPOSED.filter((n) =>
     new RegExp("(^|\\n)\\s*(const|let|function|class)\\s+" + n + "\\b").test(src));
+  /* 模組層的兩個狀態（app 與裝飾規則）要能從測試裡設定 —— 平常是 onload 灌進去的 */
   const tail = "\nmodule.exports.__test = { " + names.join(", ") +
-    ", setFmApp: (a) => { FM_APP = a; } };\n";
+    ", setFmApp: (a) => { FM_APP = a; }, setFmRules: (r) => { FM_RULES = r || []; } };\n";
   /* ⚠️ 一定要產在 src/ 旁邊，不能丟到暫存目錄：main.js 裡的 require("./settings/…")
      是相對路徑，探針放在別的資料夾時那些 require 會全部解析不到。
      檔名以 . 開頭並列進 .gitignore。 */
