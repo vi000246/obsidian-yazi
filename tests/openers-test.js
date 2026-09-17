@@ -15,7 +15,7 @@ const setPlat = (o) => Object.assign(PLAT, { isWin: false, isMacOS: false, isDes
 
 const stub = {
   obsidian: {
-    Plugin: class {},
+    Plugin: class {}, FileSystemAdapter: class FileSystemAdapter { getBasePath() { return ""; } },
     PluginSettingTab: class { constructor(a, p) { this.app = a; this.plugin = p; } },
     Setting: class { constructor() { return new Proxy(this, { get: () => () => this }); } },
     Modal: class {},
@@ -61,7 +61,7 @@ const OPENERS = [
 
 const app = {
   vault: {
-    adapter: { getBasePath: () => BASE },
+    adapter: Object.assign(new stub.obsidian.FileSystemAdapter(), { getBasePath: () => BASE }),
     getName: () => "Vault",
     getAbstractFileByPath: (p) => files[p] || null,
   },
@@ -87,7 +87,7 @@ eq("absPath 檔案(win)", absPath(app, "notes/a.md"), BASE + BS + "notes" + BS +
 eq("absPath vault 根", absPath(app, "/"), BASE);
 eq("absPath 沒有 basePath（行動版）", absPath({ vault: { adapter: {} } }, "a.md"), null);
 setPlat({ isMacOS: true });
-eq("absPath(mac) 維持斜線", absPath({ vault: { adapter: { getBasePath: () => "/Users/me/Vault" } } }, "a/b.md"), "/Users/me/Vault/a/b.md");
+eq("absPath(mac) 維持斜線", absPath({ vault: { adapter: Object.assign(new stub.obsidian.FileSystemAdapter(), { getBasePath: () => "/Users/me/Vault" }) } }, "a/b.md"), "/Users/me/Vault/a/b.md");
 setPlat({ isWin: true });
 
 /* ── 選單內容由設定決定 ── */

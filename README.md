@@ -87,6 +87,19 @@ so you can share a setup:
 - **Search fields** — which frontmatter fields become search conditions.
 - **Index** — the full-text search index: on/off, size caps, excluded folders.
 
+## Compatibility and what it touches
+
+- **Desktop and mobile.** Everything works on mobile except openers of the *command line* kind,
+  which spawn an external process; those are filtered out of the menu there.
+- **Node / Electron APIs.** Only two, both loaded lazily and only on desktop:
+  `child_process.spawn` for command openers, and Electron's `shell` for "open with the default
+  app" and "show in the file manager". Obsidian exposes no public API for either.
+- **Nothing is executed while you browse.** Preview strips dataviewjs, tasks, meta-bind, query and
+  similar blocks before rendering, replaces note embeds with a placeholder, and never evaluates
+  anything from your vault.
+- **Full-text index.** Stored in this plugin's folder under `.obsidian`. Size and excluded folders
+  are configurable, and the settings tab shows how large it is with a button to clear it.
+
 ## Development
 
 ```bash

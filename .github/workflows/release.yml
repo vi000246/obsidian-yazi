@@ -1,0 +1,50 @@
+name: Release
+
+# 推一個版本 tag（例如 0.1.0，**不要加 v 前綴** —— Obsidian 的 community plugin
+# 清單是照 manifest.json 的 version 去找同名 tag 的）就會建出 release，
+# 並附上 Obsidian 要的那三個檔案。
+on:
+  push:
+    tags:
+      - "*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # tag 與 manifest 的版本必須一致，否則使用者裝到的版本號會對不上
+      - name: Check the tag matches manifest.json
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          MANIFEST=$(node -p "require('./manifest.json').version")
+          if [ "$TAG" != "$MANIFEST" ]; then
+            echo "tag $TAG does not match manifest.json version $MANIFEST"
+            exit 1
+          fi
+
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            main.js manifest.json styles.css

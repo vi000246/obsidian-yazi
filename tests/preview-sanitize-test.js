@@ -1,7 +1,7 @@
 /* 「只渲染純 markdown」的核心保證：餵給 renderer 的字串裡不能有任何 plugin 機關。 */
 const Module = require("module");
 const stub = {
-  obsidian: { Plugin: class {}, PluginSettingTab: class { constructor(a,p){ this.app=a; this.plugin=p; } }, Setting: class { constructor(){ return new Proxy(this,{get:()=>()=>this}); } }, Modal: class {}, Notice: class {}, Component: class {}, MarkdownRenderer: {},
+  obsidian: { Plugin: class {}, FileSystemAdapter: class FileSystemAdapter { getBasePath() { return ""; } }, PluginSettingTab: class { constructor(a,p){ this.app=a; this.plugin=p; } }, Setting: class { constructor(){ return new Proxy(this,{get:()=>()=>this}); } }, Modal: class {}, Notice: class {}, Component: class {}, MarkdownRenderer: {},
               Platform: { isWin: true, isMacOS: false, isDesktopApp: true }, prepareFuzzySearch: null },
 };
 const orig = Module._load;

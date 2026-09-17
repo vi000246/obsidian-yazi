@@ -400,4 +400,7 @@ module.exports = {
   "ui.inlineQuery": "[inline query]",
   "notice.renameFailed": "Rename failed: {error}",
   "ui.overdue": "overdue",
+  "settings.index.size": "Cache on disk",
+  "settings.index.clear": "Clear cache",
+  "settings.index.cleared": "Index cache cleared",
 };

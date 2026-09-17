@@ -10,7 +10,7 @@ const MarkdownRenderer = {
     return new Promise((r) => { resolveRender = r; });
   },
 };
-const stub = { obsidian: { Plugin: class {}, PluginSettingTab: class { constructor(a,p){ this.app=a; this.plugin=p; } }, Setting: class { constructor(){ return new Proxy(this,{get:()=>()=>this}); } }, Modal: class {}, Notice: class { constructor(m) { NOTICES.push(String(m)); } },
+const stub = { obsidian: { Plugin: class {}, FileSystemAdapter: class FileSystemAdapter { getBasePath() { return ""; } }, PluginSettingTab: class { constructor(a,p){ this.app=a; this.plugin=p; } }, Setting: class { constructor(){ return new Proxy(this,{get:()=>()=>this}); } }, Modal: class {}, Notice: class { constructor(m) { NOTICES.push(String(m)); } },
   Component: FakeComponent, MarkdownRenderer, Platform: { isWin: true, isDesktopApp: true }, prepareFuzzySearch: null } };
 const NOTICES = [];
 const orig = Module._load;

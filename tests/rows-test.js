@@ -1,7 +1,7 @@
 /* 日記列真的畫出來長怎樣（renderColumn 的 DOM 路徑）。
    2026-09-17：資料來源從 dataview inline field 改成 frontmatter，stub 跟著改。 */
 const Module = require("module");
-const stub = { obsidian: { Plugin: class {}, PluginSettingTab: class { constructor(a,p){ this.app=a; this.plugin=p; } }, Setting: class { constructor(){ return new Proxy(this,{get:()=>()=>this}); } }, Modal: class {}, Notice: class {}, Component: class {}, MarkdownRenderer: {},
+const stub = { obsidian: { Plugin: class {}, FileSystemAdapter: class FileSystemAdapter { getBasePath() { return ""; } }, PluginSettingTab: class { constructor(a,p){ this.app=a; this.plugin=p; } }, Setting: class { constructor(){ return new Proxy(this,{get:()=>()=>this}); } }, Modal: class {}, Notice: class {}, Component: class {}, MarkdownRenderer: {},
   Platform: { isWin: true, isDesktopApp: true }, prepareFuzzySearch: null } };
 const orig = Module._load;
 Module._load = function (req) { return stub[req] || orig.apply(this, arguments); };

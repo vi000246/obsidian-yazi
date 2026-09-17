@@ -384,4 +384,7 @@ module.exports = {
   "ui.inlineQuery": "[行內查詢]",
   "notice.renameFailed": "更名失敗：{error}",
   "ui.overdue": "逾期",
+  "settings.index.size": "磁碟上的快取",
+  "settings.index.clear": "清除快取",
+  "settings.index.cleared": "已清除索引快取",
 };

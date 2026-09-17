@@ -3,7 +3,7 @@
 const Module = require("module");
 const PLAT = { isWin: true, isMacOS: false, isDesktopApp: true };
 const stub = {
-  obsidian: { Plugin: class {}, PluginSettingTab: class { constructor(a,p){ this.app=a; this.plugin=p; } }, Setting: class { constructor(){ return new Proxy(this,{get:()=>()=>this}); } }, Modal: class {}, Notice: class {}, Platform: PLAT, prepareFuzzySearch: null },
+  obsidian: { Plugin: class {}, FileSystemAdapter: class FileSystemAdapter { getBasePath() { return ""; } }, PluginSettingTab: class { constructor(a,p){ this.app=a; this.plugin=p; } }, Setting: class { constructor(){ return new Proxy(this,{get:()=>()=>this}); } }, Modal: class {}, Notice: class {}, Platform: PLAT, prepareFuzzySearch: null },
   child_process: { spawn: () => ({ unref() {} }) },
   electron: { shell: {} },
 };
@@ -27,7 +27,7 @@ const el = (tag, cls) => {
 const dump = (n) => n.children.map((c) => c.cls + (c.text ? ":" + c.text : "") + (c.children.length ? "[" + dump(c).join(",") + "]" : ""));
 
 const folder = { path: "100 工作", children: [] };
-const app = { vault: { adapter: { getBasePath: () => "C:" }, getName: () => "MainRepo",
+const app = { vault: { adapter: Object.assign(new stub.obsidian.FileSystemAdapter(), { getBasePath: () => "C:" }), getName: () => "MainRepo",
                        getAbstractFileByPath: (p) => (p === "100 工作" ? folder : null) } };
 /* 用真的英文語言檔當 t()：漏掉的 key 會以「畫面上出現 key 名稱」的形狀現形 */
 const EN = require("../src/i18n/en.js");

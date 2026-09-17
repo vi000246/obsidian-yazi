@@ -61,7 +61,7 @@ function load(platform, extraStubs) {
   const notices = [];
   const stubs = Object.assign({
     obsidian: {
-      Plugin: class {}, PluginSettingTab: class { constructor(a,p){ this.app=a; this.plugin=p; } }, Setting: class { constructor(){ return new Proxy(this,{get:()=>()=>this}); } },
+      Plugin: class {}, FileSystemAdapter: class FileSystemAdapter { getBasePath() { return ""; } }, PluginSettingTab: class { constructor(a,p){ this.app=a; this.plugin=p; } }, Setting: class { constructor(){ return new Proxy(this,{get:()=>()=>this}); } },
       Modal: class {},
       Notice: class { constructor(m) { notices.push(String(m)); } },
       Component: class { load() {} unload() {} },

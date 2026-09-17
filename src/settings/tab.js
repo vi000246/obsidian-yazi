@@ -774,11 +774,33 @@ class YaziSettingTab extends PluginSettingTab {
         });
       });
 
-    const stats = this.plugin.textIndexStats;
-    if (stats) {
-      const box = el.createDiv({ cls: "yazi-set-stats" });
-      box.setText(this.t("settings.index.stats", "Indexed") + ": " + stats.files + " files");
-    }
+    /*
+     * 索引檔的大小要看得見：它住在 vault 的 .obsidian 底下，一個大 vault 可以長到
+     * 十幾 MB —— 那會跟著同步與備份跑。看不到大小的話，沒有人會知道該不該清它。
+     */
+    const box = el.createDiv({ cls: "yazi-set-stats" });
+    const refresh = async () => {
+      box.empty();
+      const stats = this.plugin.textIndexStats;
+      let size = null;
+      try {
+        const st = await this.app.vault.adapter.stat(this.plugin.indexPath());
+        size = st && st.size;
+      } catch (e) { /* 還沒建過就沒有這個檔 */ }
+      const bits = [];
+      if (stats) bits.push(this.t("settings.index.stats", "Indexed") + ": " + stats.files);
+      bits.push(this.t("settings.index.size", "Cache on disk") + ": " +
+        (size ? (size / 1048576).toFixed(1) + " MB" : "—"));
+      box.createSpan({ text: bits.join("　·　") });
+
+      const clear = box.createEl("button", { text: this.t("settings.index.clear", "Clear cache") });
+      clear.onclick = async () => {
+        await this.plugin.clearIndex();
+        new Notice(this.t("settings.index.cleared", "Index cache cleared"));
+        refresh();
+      };
+    };
+    refresh();
   }
 }
 
