@@ -444,4 +444,8 @@ module.exports = {
   "settings.keys.statusNone": "No overrides — using the built-in keys.",
   "settings.keys.statusActive": "{count} in effect",
   "settings.keys.statusNothing": "Nothing is in effect.",
+  "settings.decorations.gallery": "Examples",
+  "settings.decorations.galleryDesc": "Add one and edit it, or write your own. The rule format is documented in the README.",
+  "settings.decorations.readme": "Open the README",
+  "settings.decorations.addThis": "Add",
 };

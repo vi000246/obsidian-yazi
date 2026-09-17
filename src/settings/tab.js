@@ -525,8 +525,30 @@ class YaziSettingTab extends PluginSettingTab {
       });
       await this.commit();
     };
+
+    /*
+     * 範例牆：每一條**先畫出成果**，再給一顆「加入」。
+     * 一排只有名字的按鈕看不出會發生什麼事 —— 而這個功能的重點正是視覺結果。
+     * 前幾條刻意不綁任何詞彙（命中條件是「這個欄位有值」），所以不管別人的 status
+     * 寫的是什麼字都會動，看得出「這跟我的筆記有關」。
+     */
+    el.createEl("h3", { text: this.t("settings.decorations.gallery", "Examples") });
+    const galleryDesc = el.createEl("p", { cls: "yazi-set-desc" });
+    galleryDesc.setText(this.t("settings.decorations.galleryDesc",
+      "Add one and edit it, or write your own. The rule format is documented in the README."));
+    const link = galleryDesc.createEl("a", {
+      text: " " + this.t("settings.decorations.readme", "Open the README"),
+      href: "https://github.com/vi000246/obsidian-yazi#row-decorations--frontmatter-in-the-file-list",
+    });
+    link.setAttr("target", "_blank");
+
+    const gallery = el.createDiv({ cls: "yazi-set-gallery" });
     for (const ex of EXAMPLE_DECORATIONS) {
-      const b = add.createEl("button", { text: "+ " + ex.name });
+      const item = gallery.createDiv({ cls: "yazi-set-gallery-item" });
+      this.decorationPreview(item.createDiv({ cls: "yazi-row" }), ex);
+      const foot = item.createDiv({ cls: "yazi-set-gallery-foot" });
+      foot.createSpan({ cls: "yazi-set-gallery-name", text: ex.name });
+      const b = foot.createEl("button", { text: this.t("settings.decorations.addThis", "Add") });
       b.onclick = async () => {
         s.decorations.push(Object.assign(JSON.parse(JSON.stringify(ex)), { id: uid() }));
         await this.commit();

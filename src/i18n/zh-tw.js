@@ -428,4 +428,8 @@ module.exports = {
   "settings.keys.statusNone": "沒有覆寫，照內建鍵位。",
   "settings.keys.statusActive": "{count} 條生效",
   "settings.keys.statusNothing": "沒有任何一條生效。",
+  "settings.decorations.gallery": "範例",
+  "settings.decorations.galleryDesc": "加一條進來再改，或自己寫一條。規則格式寫在 README。",
+  "settings.decorations.readme": "開啟 README",
+  "settings.decorations.addThis": "加入",
 };

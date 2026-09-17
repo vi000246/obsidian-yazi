@@ -115,28 +115,78 @@ const EXAMPLE_OPENERS = [
     args: ["-a", "Terminal", "{{dir}}"],
     enabled: true,
   },
+  /* 這一條沒有外部依賴、行動版也能用 —— 放進範例是為了讓人看到「不必碰 shell 也能擴充」 */
+  {
+    id: "example-new-window",
+    label: "Open in a new window",
+    key: "n",
+    appliesTo: "file",
+    extensions: [],
+    platform: "all",
+    kind: "obsidian-command",
+    commandId: "workspace:open-in-new-window",
+    enabled: true,
+  },
 ];
 
-/** 設定頁「加入範例」用的。不是預設值，使用者按了才會進他的設定。 */
+/*
+ * 設定頁「加入範例」用的。不是預設值 —— 按了才會進使用者的設定。
+ *
+ * 前四個刻意**不預設任何詞彙**：命中條件是「這個欄位有值」而不是「等於某個字」，
+ * 所以不管你的 status 寫的是 draft/final、待辦/完成、還是 1/2/3 都會動。
+ * 範例的用途是讓人看懂這個功能跟**他自己的筆記**有什麼關係，不是示範作者的制度。
+ * 最後一個才是「有一整套詞彙時長什麼樣」的完整示範（含對照表、排序權重、逾期）。
+ */
 const EXAMPLE_DECORATIONS = [
   {
-    id: "example-diary",
-    name: "Diary: mood icon + title",
-    when: { field: "type", equals: "diary" },
-    icon: { from: "field", field: "mood" },
-    title: { from: "field", field: "title", fallback: "filename" },
-    subtitle: { from: "basename" },
-    tail: [],
+    id: "example-status",
+    name: "Show a status field on any note that has one",
+    when: { field: "status" },
+    icon: { from: "fixed", value: "·" },
+    status: { field: "status" },
     enabled: true,
   },
   {
-    id: "example-status",
-    name: "Tasks: status and priority tail",
+    id: "example-alias",
+    name: "Show the alias instead of the file name",
+    when: { field: "aliases" },
+    icon: { from: "fixed", value: "·" },
+    title: { from: "field", field: "aliases", fallback: "filename" },
+    subtitle: { from: "basename" },
+    enabled: true,
+  },
+  {
+    id: "example-icon-field",
+    name: "Use an icon field as the row icon",
+    when: { field: "icon" },
+    icon: { from: "field", field: "icon" },
+    enabled: true,
+  },
+  {
+    id: "example-archived",
+    name: "Dim archived notes",
+    when: { field: "archived", equals: true },
+    icon: { from: "fixed", value: "📦" },
+    dimWhen: [{ field: "archived", equals: true }],
+    enabled: true,
+  },
+  {
+    id: "example-task",
+    name: "Tasks: icon per kind, status badge, high priorities only",
     when: { field: "type", equals: "task" },
-    icon: { from: "fixed", value: "📌" },
-    title: { from: "filename" },
-    subtitle: { from: "none" },
-    tail: [{ field: "status" }, { field: "priority" }],
+    icon: { from: "map", field: "kind", map: { feature: "✨", bug: "🐞", chore: "🔧" }, fallback: "📌" },
+    group: { field: "kind", order: ["feature", "bug", "chore"] },
+    status: {
+      field: "status",
+      map: {
+        backlog: { text: "📥", order: 1 },
+        todo: { text: "📋", order: 2 },
+        doing: { text: "🔨", order: 3 },
+        done: { text: "✅", order: 4, dim: true },
+      },
+    },
+    priority: { field: "priority", order: { P0: 0, P1: 1, P2: 2, P3: 3 }, showMaxOrder: 1 },
+    overdue: { field: "due" },
     enabled: true,
   },
 ];

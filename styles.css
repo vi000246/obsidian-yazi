@@ -1250,3 +1250,40 @@ input.yazi-input {
 .yazi-set-km-status.is-idle {
   color: var(--text-faint);
 }
+
+/* 列裝飾的範例牆：每一格先畫出**成果**，再給一顆「加入」。
+   一排只有名字的按鈕看不出會發生什麼事，而這個功能的重點正是視覺結果。 */
+.yazi-set-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.yazi-set-gallery-item {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--background-primary);
+}
+
+.yazi-set-gallery-item .yazi-row {
+  background: var(--background-secondary);
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.yazi-set-gallery-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.yazi-set-gallery-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.yazi-set-gallery-foot button { flex: 0 0 auto; }

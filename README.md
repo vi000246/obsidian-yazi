@@ -207,8 +207,38 @@ conditions and the preview-panel field order live in the **Advanced (JSON)** box
 they are nested data, and a form for them would be thirty input boxes.
 </details>
 
-A value that is filled in but missing from your lookup table is drawn as `❓` plus the raw value. That
-is deliberate: it makes drift visible instead of quietly falling back to a normal-looking icon.
+The settings tab ships a gallery of examples — each one **shows the row it produces** before you add
+it. The first few match on *“this field has a value”* rather than on a particular word, so they work
+whatever your `status` or `icon` values happen to be.
+
+<details>
+<summary>Rule format, field by field</summary>
+
+Every part is optional except `when`. Rules are matched top to bottom and the first match wins, so
+put the specific ones above the general ones.
+
+| Key | What it does |
+|---|---|
+| `when` | `{field}` — the field has any value · `{field, equals}` · `{field, in: [...]}` |
+| `icon` | `{from:"fixed", value}` · `{from:"field", field}` · `{from:"map", field, map:{value:icon}, fallback}` |
+| `title` | `{from:"field", field, fallback:"filename"}` — replaces the file name |
+| `subtitle` | `{from:"basename"}` or `{from:"field", field}` — small text on the right, drawn only when the title came from a field |
+| `status` | `{field}` shows the raw value · `{field, map:{value:{text, order, dim}}}` gives it a glyph, a sort weight, and can dim the row |
+| `priority` | `{field, order:{value:0,…}, showMaxOrder}` — only values at or below `showMaxOrder` are drawn |
+| `group` | `{field, order:[…]}` — the sort weight used by “sort by category” |
+| `dimWhen` / `pinWhen` | `[{field, equals}]` — dim the row, or float it to the top |
+| `statusWhen` | `[{field, equals, text, dim}]` — override the badge (e.g. a file whose source has gone) |
+| `overdue` | `{field}` — a date field; marks ⏰ when it is in the past and the row is not dimmed |
+| `panel` | `["field", {field, label}]` — field order in the preview pane's metadata table |
+
+The four fields with tables (`icon.map`, `status.map`, `priority.order`, `group.order`) are edited as
+JSON in the **Advanced** box of a rule — they are nested data, and a form for them would be thirty
+input boxes.
+
+**Values outside your table show as `❓` plus the raw value.** That is deliberate: it makes drift
+visible instead of quietly falling back to a normal-looking icon. A `status` with *no* table has
+nothing to drift from, so it just shows the value.
+</details>
 
 ### Search fields
 

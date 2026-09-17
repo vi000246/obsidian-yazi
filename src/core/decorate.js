@@ -132,13 +132,20 @@ function decorate(fm, rules, names) {
   /* 狀態徽章 */
   if (rule.status && rule.status.field) {
     const v = fieldOf(fm, rule.status.field);
-    const hit = v && rule.status.map ? rule.status.map[v] : null;
+    const table = rule.status.map;
+    const hasTable = table && Object.keys(table).length > 0;
+    const hit = v && hasTable ? table[v] : null;
     if (hit) {
       out.status = hit.text != null ? hit.text : v;
       out.statusOrder = hit.order != null ? hit.order : LAST;
       if (hit.dim) out.dim = true;
+    } else if (v && hasTable) {
+      /* 有詞彙表、但這個值不在裡面 ＝ 漂移，要看得見 */
+      out.status = UNKNOWN + v;
     } else if (v) {
-      out.status = UNKNOWN + v;   // 有填但不認得：把原值攤出來
+      /* 沒有詞彙表就直接顯示原值。沒有表就沒有「應該是哪些值」可言，
+         這時候畫 ❓ 只是對每一列都指控一次。 */
+      out.status = v;
     }
   }
 
