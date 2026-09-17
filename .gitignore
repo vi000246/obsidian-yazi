@@ -5,6 +5,9 @@ main.js.map
 # 本機開發設定：指向自己 vault 的 plugin 資料夾
 .env.local
 
+# 測試探針（tests/_probe.js 產生）
+src/.probe.generated.js
+
 # 依賴
 node_modules/
 

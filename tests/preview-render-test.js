@@ -10,7 +10,7 @@ const MarkdownRenderer = {
     return new Promise((r) => { resolveRender = r; });
   },
 };
-const stub = { obsidian: { Plugin: class {}, Modal: class {}, Notice: class { constructor(m) { NOTICES.push(String(m)); } },
+const stub = { obsidian: { Plugin: class {}, PluginSettingTab: class { constructor(a,p){ this.app=a; this.plugin=p; } }, Setting: class { constructor(){ return new Proxy(this,{get:()=>()=>this}); } }, Modal: class {}, Notice: class { constructor(m) { NOTICES.push(String(m)); } },
   Component: FakeComponent, MarkdownRenderer, Platform: { isWin: true, isDesktopApp: true }, prepareFuzzySearch: null } };
 const NOTICES = [];
 const orig = Module._load;
@@ -23,7 +23,11 @@ const mkEl = (tag, cls) => ({ tag, cls: cls || "", children: [], removed: false,
   remove() { this.removed = true; if (this.parent) this.parent.children = this.parent.children.filter((x) => x !== this); },
   empty() { this.children = []; } });
 
-const plugin = { data: {}, setRenderPreview(on) { this.data.renderPreview = !!on; } };
+const plugin = {
+  settings: { preview: { renderMarkdown: true } },
+  setRenderPreview(on) { this.settings.preview.renderMarkdown = !!on; },
+  t: (k, f) => f || k,
+};
 const m = Object.assign(Object.create(YaziModal.prototype), { app: {}, plugin, render() {}, previewToken: 1 });
 
 let fail = 0;
@@ -60,9 +64,9 @@ eq("全部收掉", [loaded, unloaded], [3, 3]);
 /* ,p 切換 */
 NOTICES.length = 0;
 m.toggleRenderMd();
-eq("關掉 → 存進 plugin data", [plugin.data.renderPreview, m.renderMd(), NOTICES.slice()], [false, false, ["預覽：原始文字"]]);
+eq("關掉 → 存進 settings", [plugin.settings.preview.renderMarkdown, m.renderMd(), NOTICES.slice()], [false, false, ["Preview: plain text"]]);
 m.toggleRenderMd();
-eq("再按一次 → 開回來", [plugin.data.renderPreview, m.renderMd()], [true, true]);
+eq("再按一次 → 開回來", [plugin.settings.preview.renderMarkdown, m.renderMd()], [true, true]);
 
 console.log(fail ? "\n" + fail + " 項失敗" : "\n全部通過");
 process.exit(fail ? 1 : 0);

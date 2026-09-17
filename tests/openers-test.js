@@ -1,130 +1,153 @@
+/*
+ * O 選單在 modal 裡的完整行為：選單內容、四種動作的派工、絕對路徑、複製路徑。
+ * 開啟方式全部來自設定 —— 這支就是在驗「設定真的決定了行為」。
+ */
 const Module = require("module");
-const BS = String.fromCharCode(92);              // 反斜線：避免寫進原始碼被層層轉義
-const W = (p) => p.split("/").join(BS);          // posix 寫法 → Windows 原生寫法
-const notices = [], spawns = [], reveals = [], opens = [];
-const PLAT = { isWin: true, isMacOS: false, isDesktopApp: true };   // 就地改，不能換物件
+
+const spawns = [];
+const reveals = [];
+const opens = [];
+const commands = [];
+const notices = [];
+
+const PLAT = { isWin: true, isMacOS: false, isDesktopApp: true };
 const setPlat = (o) => Object.assign(PLAT, { isWin: false, isMacOS: false, isDesktopApp: true }, o);
+
 const stub = {
   obsidian: {
-    Plugin: class {}, Modal: class {},
+    Plugin: class {},
+    PluginSettingTab: class { constructor(a, p) { this.app = a; this.plugin = p; } },
+    Setting: class { constructor() { return new Proxy(this, { get: () => () => this }); } },
+    Modal: class {},
     Notice: class { constructor(m) { notices.push(String(m)); } },
-    Platform: PLAT, prepareFuzzySearch: null,
+    Component: class { load() {} unload() {} },
+    MarkdownRenderer: { render: () => Promise.resolve() },
+    Platform: PLAT,
+    prepareFuzzySearch: null,
   },
   child_process: { spawn: (c, a) => { spawns.push([c].concat(a)); return { unref() {} }; } },
-  electron: { shell: { showItemInFolder: (p) => reveals.push(p), openPath: (p) => { opens.push(p); return Promise.resolve(""); } } },
+  electron: {
+    shell: {
+      showItemInFolder: (p) => reveals.push(p),
+      openPath: (p) => { opens.push(p); return Promise.resolve(""); },
+    },
+  },
 };
 const orig = Module._load;
 Module._load = function (req) { return stub[req] || orig.apply(this, arguments); };
+const { YaziModal, absPath } = require(require("./_probe.js").probePath()).__test;
 
-const { absPath, myconfigScript, YaziModal } = require(require("./_probe.js").probePath()).__test;
+const BS = String.fromCharCode(92);
+const W = (p) => p.split("/").join(BS);
+const BASE = W("C:/Vault");
 
-const BASE = W("C:/Users/logan_lin/Projects/Obsidian/MainRepo");
-const folder = { path: "100 工作", children: [] };
-const md     = { path: "100 工作/筆記.md", name: "筆記.md", extension: "md" };
-const png    = { path: "圖/a.png", name: "a.png", extension: "png" };
-const root   = { path: "/", children: [] };
-const files = { "100 工作": folder, "100 工作/筆記.md": md, "圖/a.png": png, "/": root };
-const app = { vault: { adapter: { getBasePath: () => BASE }, getName: () => "MainRepo",
-                       getAbstractFileByPath: (p) => files[p] || null } };
-const modal = (cur, a) => Object.assign(Object.create(YaziModal.prototype),
-  { app: a || app, view: "files", cwd: root, current: () => cur, render() {}, plugin: null });
+const folder = { path: "notes", name: "notes", children: [] };
+const md = { path: "notes/a.md", name: "a.md", basename: "a", extension: "md" };
+const png = { path: "notes/b.png", name: "b.png", basename: "b", extension: "png" };
+const root = { path: "/", name: "", children: [] };
+const files = { notes: folder, "notes/a.md": md, "notes/b.png": png, "/": root };
+
+const OPENERS = [
+  { id: "sys", label: "Default app", key: "d", appliesTo: "file", extensions: [], platform: "all", kind: "system", enabled: true },
+  { id: "dir", label: "Open folder", key: "f", appliesTo: "folder", extensions: [], platform: "all", kind: "system", enabled: true },
+  { id: "rev", label: "Show in file manager", key: "r", appliesTo: "both", extensions: [], platform: "all", kind: "reveal", enabled: true },
+  { id: "edit", label: "Editor", key: "e", appliesTo: "file", extensions: ["md"], platform: "all", kind: "command", enabled: true,
+    command: "code", args: ["--reuse-window", "{{path}}"] },
+  { id: "term", label: "Terminal", key: "t", appliesTo: "both", extensions: [], platform: "all", kind: "command", enabled: true,
+    command: "wt.exe", args: ["-d", "{{dir}}"] },
+  { id: "obs", label: "Split", key: "s", appliesTo: "file", extensions: [], platform: "all", kind: "obsidian-command", enabled: true,
+    commandId: "workspace:split-vertical" },
+];
+
+const app = {
+  vault: {
+    adapter: { getBasePath: () => BASE },
+    getName: () => "Vault",
+    getAbstractFileByPath: (p) => files[p] || null,
+  },
+  commands: { executeCommandById: (id) => commands.push(id) },
+  workspace: { getLeaf: () => ({ openFile: () => Promise.resolve() }) },
+};
+
+const plugin = { settings: { openers: OPENERS }, t: (k, f) => f || k };
+const modal = (cur) => Object.assign(Object.create(YaziModal.prototype), {
+  app, plugin, view: "files", cwd: root, current: () => cur, render() {}, close() {},
+});
 
 let fail = 0;
-const eq = (name, got, want) => {
+const eq = (n, got, want) => {
   const ok = JSON.stringify(got) === JSON.stringify(want);
   if (!ok) fail++;
-  console.log((ok ? "PASS " : "FAIL ") + name + (ok ? "  → " + JSON.stringify(got)
-    : "\n      got  " + JSON.stringify(got) + "\n      want " + JSON.stringify(want)));
+  console.log((ok ? "PASS " : "FAIL ") + n + "  → " + JSON.stringify(got) + (ok ? "" : "\n      want " + JSON.stringify(want)));
 };
-const keys = (m) => m.openActions().map((a) => a.k + ":" + m.openLabel(a));
+const keys = (m) => m.openActions().map((a) => a.key);
 
-/* 1. 絕對路徑 */
-eq("absPath 檔案(win)", absPath(app, "100 工作/筆記.md"), BASE + BS + "100 工作" + BS + "筆記.md");
-eq("absPath vault 根",  absPath(app, "/"), BASE);
-eq("absPath 無 basePath", absPath({ vault: { adapter: {} } }, "a.md"), null);
-eq("myconfigScript(win)", myconfigScript("scripts/yazi/open-in-terminal.ps1"),
-   W("C:/Users/logan_lin/Projects/MyConfig/scripts/yazi/open-in-terminal.ps1"));
-
+/* ── 絕對路徑（跨平台）── */
+eq("absPath 檔案(win)", absPath(app, "notes/a.md"), BASE + BS + "notes" + BS + "a.md");
+eq("absPath vault 根", absPath(app, "/"), BASE);
+eq("absPath 沒有 basePath（行動版）", absPath({ vault: { adapter: {} } }, "a.md"), null);
 setPlat({ isMacOS: true });
-eq("absPath 檔案(mac)", absPath({ vault: { adapter: { getBasePath: () => "/Users/logan/v" } } }, "a/b.md"), "/Users/logan/v/a/b.md");
-eq("myconfigScript(mac)", myconfigScript("scripts/yazi/open-in-terminal.sh"), "/Users/logan/projects/MyConfig/scripts/yazi/open-in-terminal.sh");
-eq("reveal 標籤(mac)", keys(modal(md)).pop(), "r:在 Finder 顯示");
+eq("absPath(mac) 維持斜線", absPath({ vault: { adapter: { getBasePath: () => "/Users/me/Vault" } } }, "a/b.md"), "/Users/me/Vault/a/b.md");
 setPlat({ isWin: true });
 
-/* 2. 選單跟著游標變 */
-eq("選單 .md",    keys(modal(md)),     ["e:Neovim","w:瀏覽器預覽","d:系統預設程式","c:Claude Code","g:lazygit","t:終端機","r:在總管顯示"]);
-eq("選單 .png",   keys(modal(png)),    ["d:系統預設程式","c:Claude Code","g:lazygit","t:終端機","r:在總管顯示"]);
-eq("選單 資料夾", keys(modal(folder)), ["f:開資料夾","c:Claude Code","g:lazygit","t:終端機","r:在總管顯示"]);
+/* ── 選單內容由設定決定 ── */
+eq("檔案(.md)：副檔名限定的 editor 有出現", keys(modal(md)), ["d", "r", "e", "t", "s"]);
+eq("檔案(.png)：editor 被副檔名擋掉", keys(modal(png)), ["d", "r", "t", "s"]);
+eq("資料夾：只有適用資料夾的", keys(modal(folder)), ["f", "r", "t"]);
 eq("空資料夾退回 cwd", modal(null).openTarget().path, "/");
-/* which-key 卡的內容 */
-const menu = (cur, pending) => { const m = modal(cur); m.pending = pending; return m.pendingMenu(); };
-eq("O 卡：標題", menu(folder, "open").key, "O");
-eq("O 卡：資料夾項目", menu(folder, "open").items.map((x) => x.join(" ")), ["f 開資料夾","c Claude Code","g lazygit","t 終端機","r 在總管顯示"]);
-eq("O 卡：說明含路徑", menu(folder, "open").desc.endsWith("100 工作"), true);
-eq("c 卡", menu(md, "c").items.map((x) => x[0]), ["c","d","f","n","r"]);
-eq("g 卡", menu(md, "g").items.map((x) => x[0]), ["g","t","f","d","b"]);
-eq("m 卡＝只有說明", [menu(md, "assign").key, menu(md, "assign").items.length, menu(md, "assign").note], ["m", 0, "按一個字母指定；Backspace 清除"]);
-eq("S 卡：標出目前排序", menu(md, "sort").items.filter((x) => x[1].includes("←")).map((x) => x[0]), ["n"]);
-eq("S 卡：最後兩項", menu(md, "sort").items.slice(-2).map((x) => x.join(" ")), ["S 正序 ⇄ 逆序","d 取消「資料夾優先」"]);
-eq("沒有 pending ＝不畫卡", modal(md).pendingMenu(), null);
 
-/* 3. 實際派工 */
-const PS = ["powershell.exe","-NoProfile","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File"];
-const TERM = W("C:/Users/logan_lin/Projects/MyConfig/scripts/yazi/open-in-terminal.ps1");
-const MDV  = W("C:/Users/logan_lin/Projects/MyConfig/scripts/markdown/md-preview.ps1");
-const ABS_F = BASE + BS + "100 工作", ABS_MD = BASE + BS + "100 工作" + BS + "筆記.md";
-modal(folder).runOpenAction("t"); eq("資料夾→終端機", spawns.pop(), PS.concat([TERM, "terminal", ABS_F]));
-modal(md).runOpenAction("c");     eq("檔案→Claude",   spawns.pop(), PS.concat([TERM, "claude", ABS_MD]));
-modal(md).runOpenAction("e");     eq("檔案→nvim",     spawns.pop(), PS.concat([TERM, "nvim", ABS_MD]));
-modal(md).runOpenAction("w");     eq("md→瀏覽器預覽", spawns.pop(), PS.concat([MDV, ABS_MD]));
-modal(md).runOpenAction("r");     eq("在總管顯示",    reveals.pop(), ABS_MD);
-modal(folder).runOpenAction("f"); eq("開資料夾",      opens.pop(), ABS_F);
+setPlat({ isDesktopApp: false, isWin: true });
+eq("行動版：command 類全消失，其餘照常", keys(modal(md)), ["d", "r", "s"]);
+setPlat({ isWin: true });
+
+plugin.settings.openers = [{ id: "m", label: "mac only", key: "m", appliesTo: "both", platform: "mac", kind: "system", enabled: true }].concat(OPENERS);
+setPlat({ isMacOS: true });
+eq("平台限定：mac 的在 mac 出現", keys(modal(md)).includes("m"), true);
+setPlat({ isWin: true });
+eq("平台限定：mac 的在 win 不出現", keys(modal(md)).includes("m"), false);
+plugin.settings.openers = OPENERS;
+
+/* ── 四種動作的派工 ── */
+const ABS_MD = BASE + BS + "notes" + BS + "a.md";
+const ABS_DIR = BASE + BS + "notes";
+
+modal(md).runOpenAction("e");
+eq("command：參數逐一展開", spawns.pop(), ["code", "--reuse-window", ABS_MD]);
+modal(md).runOpenAction("t");
+eq("{{dir}} 是檔案所在資料夾", spawns.pop(), ["wt.exe", "-d", ABS_DIR]);
+modal(folder).runOpenAction("t");
+eq("資料夾的 {{dir}} 是它自己", spawns.pop(), ["wt.exe", "-d", ABS_DIR]);
+modal(md).runOpenAction("r");
+eq("reveal 走 shell.showItemInFolder", reveals.pop(), ABS_MD);
+modal(md).runOpenAction("d");
+eq("system 走 shell.openPath", opens.pop(), ABS_MD);
+modal(folder).runOpenAction("f");
+eq("資料夾的 system ＝開那個資料夾", opens.pop(), ABS_DIR);
 notices.length = 0; spawns.length = 0;
-modal(png).runOpenAction("w");    eq("不存在的鍵＝取消", [spawns.length, notices.length], [0, 0]);
-modal(folder).runOpenAction("e"); eq("資料夾沒有 nvim",  [spawns.length, notices.length], [0, 0]);
+modal(png).runOpenAction("e");
+eq("不適用的鍵＝當成取消，什麼都不做", [spawns.length, notices.length], [0, 0]);
 
-/* 4. cc / cd / cf / cn / cr */
+/* ── 複製路徑 ── */
 const clip = [];
-Object.defineProperty(globalThis, "navigator", { value: { clipboard: { writeText: (t) => { clip.push(t); return Promise.resolve(); } } }, configurable: true });
+Object.defineProperty(globalThis, "navigator", {
+  value: { clipboard: { writeText: (t) => { clip.push(t); return Promise.resolve(); } } },
+  configurable: true,
+});
 const m = modal(md);
-m.copyPath("c"); eq("cc 絕對路徑",   clip.pop(), ABS_MD);
-m.copyPath("d"); eq("cd 絕對資料夾", clip.pop(), ABS_F);
-m.copyPath("r"); eq("cr 相對路徑",   clip.pop(), "100 工作/筆記.md");
-m.copyPath("f"); eq("cf 檔名",       clip.pop(), "筆記.md");
-m.copyPath("n"); eq("cn 主檔名",     clip.pop(), "筆記");
-const noBase = { vault: { adapter: {}, getName: () => "v", getAbstractFileByPath: (p) => files[p] || null } };
-modal(md, noBase).copyPath("c"); eq("手機版 cc 退回相對", clip.pop(), "100 工作/筆記.md");
+m.copyPath("c"); eq("cc 絕對路徑", clip.pop(), ABS_MD);
+m.copyPath("d"); eq("cd 絕對資料夾", clip.pop(), ABS_DIR);
+m.copyPath("r"); eq("cr vault 相對路徑", clip.pop(), "notes/a.md");
+m.copyPath("f"); eq("cf 檔名", clip.pop(), "a.md");
+m.copyPath("n"); eq("cn 主檔名", clip.pop(), "a");
 
-/* 5. 手機版擋下 O */
-setPlat({ isDesktopApp: false });
-notices.length = 0;
-const mob = modal(md); mob.openMenu();
-eq("手機版擋下 O", [mob.pending === "open", notices.slice()], [false, ["外部開啟只有桌面版能用"]]);
+/* obsidian-command 會**先開檔再執行命令**，所以要等一輪 microtask —— 這個順序是
+   刻意的：命令多半作用在「目前開啟的檔案」上，先開才有意義。 */
+(async () => {
+  modal(md).runOpenAction("s");
+  await Promise.resolve();
+  await Promise.resolve();
+  eq("obsidian-command：先開檔，再執行命令", commands.pop(), "workspace:split-vertical");
 
-
-/* 6. e 只留文字檔（新增） */
-setPlat({ isWin: true });   // 第 5 段把平台切成手機了，切回來
-const mk = (p, ext) => ({ path: p, name: p.split("/").pop(), extension: ext });
-const REST = ["d:系統預設程式","c:Claude Code","g:lazygit","t:終端機","r:在總管顯示"];
-const cases = [
-  ["圖/a.png",   "png",  REST],
-  ["文/a.pdf",   "pdf",  REST],
-  ["封存/a.zip", "zip",  REST],
-  ["雜/Makefile", "",    REST],
-  ["設定/a.JSON", "JSON", ["e:Neovim"].concat(REST)],
-  ["程式/a.ts",  "ts",   ["e:Neovim"].concat(REST)],
-  ["筆/n.md",    "md",   ["e:Neovim","w:瀏覽器預覽"].concat(REST)],
-];
-for (const [p, ext, want] of cases) {
-  const f = mk(p, ext);
-  files[p] = f;
-  eq("選單 " + p.split("/").pop(), keys(modal(f)), want);
-}
-notices.length = 0; spawns.length = 0; opens.length = 0;
-modal(files["圖/a.png"]).runOpenAction("e");
-eq("png 按 e ＝當成取消", [spawns.length, notices.length], [0, 0]);
-modal(files["圖/a.png"]).runOpenAction("d");
-eq("png 按 d ＝系統預設程式", opens.pop(), BASE + BS + "圖" + BS + "a.png");
-
-console.log(fail ? "\n" + fail + " 項失敗" : "\n全部通過");
-process.exit(fail ? 1 : 0);
+  console.log(fail ? "\n" + fail + " 項失敗" : "\n全部通過");
+  process.exit(fail ? 1 : 0);
+})();

@@ -1,6 +1,6 @@
 /* 按鍵派工：捲預覽的那幾顆有沒有接到、有沒有誤傷移游標的鍵 */
 const Module = require("module");
-const stub = { obsidian: { Plugin: class {}, Modal: class {}, Notice: class {}, Component: class {}, MarkdownRenderer: {},
+const stub = { obsidian: { Plugin: class {}, PluginSettingTab: class { constructor(a,p){ this.app=a; this.plugin=p; } }, Setting: class { constructor(){ return new Proxy(this,{get:()=>()=>this}); } }, Modal: class {}, Notice: class {}, Component: class {}, MarkdownRenderer: {},
   Platform: { isWin: true, isDesktopApp: true }, prepareFuzzySearch: null } };
 const orig = Module._load;
 Module._load = function (req) { return stub[req] || orig.apply(this, arguments); };

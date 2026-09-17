@@ -13,7 +13,6 @@
  *   const { YaziModal, stripForRender } = load({ Platform: { isWin: true } });
  */
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const Module = require("module");
 
@@ -39,7 +38,10 @@ function probePath() {
     new RegExp("(^|\\n)\\s*(const|let|function|class)\\s+" + n + "\\b").test(src));
   const tail = "\nmodule.exports.__test = { " + names.join(", ") +
     ", setFmApp: (a) => { FM_APP = a; } };\n";
-  cached = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "yazi-test-")), "probe.js");
+  /* ⚠️ 一定要產在 src/ 旁邊，不能丟到暫存目錄：main.js 裡的 require("./settings/…")
+     是相對路徑，探針放在別的資料夾時那些 require 會全部解析不到。
+     檔名以 . 開頭並列進 .gitignore。 */
+  cached = path.join(path.dirname(SRC), ".probe.generated.js");
   fs.writeFileSync(cached, src + tail, "utf8");
   return cached;
 }
@@ -58,7 +60,7 @@ function load(platform, extraStubs) {
   const notices = [];
   const stubs = Object.assign({
     obsidian: {
-      Plugin: class {},
+      Plugin: class {}, PluginSettingTab: class { constructor(a,p){ this.app=a; this.plugin=p; } }, Setting: class { constructor(){ return new Proxy(this,{get:()=>()=>this}); } },
       Modal: class {},
       Notice: class { constructor(m) { notices.push(String(m)); } },
       Component: class { load() {} unload() {} },

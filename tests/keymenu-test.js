@@ -3,7 +3,7 @@
 const Module = require("module");
 const PLAT = { isWin: true, isMacOS: false, isDesktopApp: true };
 const stub = {
-  obsidian: { Plugin: class {}, Modal: class {}, Notice: class {}, Platform: PLAT, prepareFuzzySearch: null },
+  obsidian: { Plugin: class {}, PluginSettingTab: class { constructor(a,p){ this.app=a; this.plugin=p; } }, Setting: class { constructor(){ return new Proxy(this,{get:()=>()=>this}); } }, Modal: class {}, Notice: class {}, Platform: PLAT, prepareFuzzySearch: null },
   child_process: { spawn: () => ({ unref() {} }) },
   electron: { shell: {} },
 };
@@ -29,8 +29,15 @@ const dump = (n) => n.children.map((c) => c.cls + (c.text ? ":" + c.text : "") +
 const folder = { path: "100 工作", children: [] };
 const app = { vault: { adapter: { getBasePath: () => "C:" }, getName: () => "MainRepo",
                        getAbstractFileByPath: (p) => (p === "100 工作" ? folder : null) } };
+const plugin = { t: (k, f) => f || k, settings: { openers: [
+  { id: "dir", label: "開資料夾", key: "f", appliesTo: "folder", kind: "system", enabled: true },
+  { id: "c", label: "Claude Code", key: "c", appliesTo: "both", kind: "command", enabled: true, command: "claude" },
+  { id: "g", label: "lazygit", key: "g", appliesTo: "both", kind: "command", enabled: true, command: "lazygit" },
+  { id: "t", label: "終端機", key: "t", appliesTo: "both", kind: "command", enabled: true, command: "wt" },
+  { id: "r", label: "在總管顯示", key: "r", appliesTo: "both", kind: "reveal", enabled: true },
+] } };
 const m = Object.assign(Object.create(YaziModal.prototype), {
-  app, view: "files", cwd: folder, current: () => folder, plugin: null,
+  app, view: "files", cwd: folder, current: () => folder, plugin,
   menuEl: el("div", "yazi-keymenu"), kmTitleEl: el("div"), kmItemsEl: el("div"), kmHintEl: el("div"),
 });
 
