@@ -157,9 +157,9 @@ const DEFAULT_SETTINGS = {
   /* "auto" ＝ 跟著 Obsidian 的語言走，找不到翻譯就退回英文 */
   locale: "auto",
 
-  /* actionId → 綁定陣列。空陣列＝這個動作沒有鍵（但仍可從命令面板或選單觸發）。
-     實際的預設內容在 core/keymap.js（那裡才知道有哪些 action）。 */
-  keymap: {},
+  /* 鍵位覆寫，一段文字（map / unmap，語法見 core/keymap.js）。
+     預設空的＝完全照內建鍵位。 */
+  keymap: "",
 
   openers: DEFAULT_OPENERS,
   decorations: DEFAULT_DECORATIONS,

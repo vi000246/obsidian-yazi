@@ -215,6 +215,49 @@ is deliberate: it makes drift visible instead of quietly falling back to a norma
 Which frontmatter fields become search conditions, each with a direct key (pressed with `Ctrl` while
 searching) and an icon.
 
+### Keys
+
+The keys inside the explorer are fixed, because they are an interlocking set: `d`/`u` are half-page,
+which is why delete is `D`; `y` yanks files, which is why copying a path lives under `c`. Change one
+in isolation and the reason for the others disappears. Press `?` inside the explorer for the full list.
+
+What you *can* do is **alias one key to another**, the same idea as Surfingkeys' `map`:
+
+```
+map J gt        # J now does what g then t did (full-text search)
+map w O         # w now does what O did
+unmap S         # S does nothing
+# lines starting with # are comments
+```
+
+Keys you cannot type go in angle brackets: `<Space> <Enter> <Esc> <Tab> <Backspace> <Up> <Down>
+<Left> <Right> <PageUp> <PageDown>`. The left side is always a single key; the right side may be a
+sequence. A line that does not parse is listed under the box with the reason, rather than silently
+doing nothing.
+
+<details>
+<summary>What you can map — every key the explorer uses</summary>
+
+| | |
+|---|---|
+| **Move** | `j` `k` `h` `l` `g`(`gg` `gt` `gf` `gd` `gb`) `G` `d` `u` |
+| **Open** | `o` `t` `s` `i` `O`(then an opener key) |
+| **Lists** | `T` `b` `z` `r`(`rf`) |
+| **Bookmarks** | `m` `M` `'` |
+| **Select** | `<Space>` `v` `V` `Esc` |
+| **Clipboard** | `y` `x` `p` `P` `Y` `X` |
+| **Files** | `a` `A` `R` `D` `c`(`cc` `cd` `cf` `cn` `cr`) |
+| **Sort** | `S`(then a sort key) |
+| **Preview** | `J` `K` `PageDown` `PageUp` `,`(`,x` `,X` `,p`) |
+| **Other** | `/` `?` `q` |
+
+Mapping the first key of a sequence remaps the whole sequence: `map z g` makes `zt` behave as `gt`.
+
+**Three things overrides never touch:** typing (the filter, search and rename boxes), bookmark
+letters (`'` and `m` take the letter literally, so every letter stays usable as a shortcut), and
+`Ctrl` combinations.
+</details>
+
 ### Preview and index
 
 Render on/off, render delay, scroll step, wheel behaviour, cursor wrap-around, half-page size, and the

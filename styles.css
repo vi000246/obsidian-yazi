@@ -1045,14 +1045,50 @@ input.yazi-input {
 
 .yazi-set-card-body.is-open { display: block; }
 
-/* 卡片裡的 Setting 縮一點，跟外層的設定項拉開層級 */
+/* 卡片裡的 Setting 改成**上下堆疊**：說明在上、控制項在下。
+   Obsidian 預設是左右兩欄（說明｜控制項），那在這裡會壞掉 —— 有幾列放了兩三個控制項
+   （命中條件的「欄位 ＋ 值」、圖示的「來源 ＋ 欄位 ＋ 對照表」），控制欄一撐開，左邊的
+   說明欄就被擠到接近 0 寬，長說明變成一個字一行往下堆，畫面上看起來是一大塊空白。
+   卡片本來就窄，堆疊反而讀得更順。 */
 .yazi-set-card-body .setting-item {
-  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 10px 0;
   border: none;
 }
 
 .yazi-set-card-body .setting-item + .setting-item {
-  border-top: 1px solid var(--background-modifier-border-hover, transparent);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.yazi-set-card-body .setting-item-info {
+  margin-right: 0;
+  width: 100%;
+}
+
+.yazi-set-card-body .setting-item-description {
+  padding-top: 2px;
+  line-height: 1.45;
+}
+
+.yazi-set-card-body .setting-item-control {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+}
+
+/* 並排的輸入框不要互相擠壓，textarea 吃滿一行 */
+.yazi-set-card-body .setting-item-control input[type="text"] {
+  flex: 1 1 12em;
+  min-width: 8em;
+}
+
+.yazi-set-card-body .setting-item-control textarea {
+  flex: 1 1 100%;
+  width: 100%;
 }
 
 .yazi-set-add {
@@ -1179,3 +1215,16 @@ input.yazi-input {
 }
 
 .yazi-set-cmd-name { font-family: var(--font-monospace); font-size: var(--font-ui-smaller); }
+
+/* 鍵位覆寫：寫壞的那幾行當場標出來（哪一行、原文、為什麼），
+   而不是靜靜不生效 —— 後者會讓人以為是 plugin 壞了。 */
+.yazi-set-km-errors:not(:empty) {
+  margin: 8px 0;
+}
+
+.yazi-set-km-error {
+  padding: 3px 10px;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-error);
+}
