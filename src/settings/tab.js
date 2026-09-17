@@ -13,6 +13,7 @@
  */
 const { PluginSettingTab, Setting, Notice, Modal } = require("obsidian");
 const { defaultSettings, EXAMPLE_DECORATIONS, PLACEHOLDERS, OPENER_KINDS } = require("./defaults.js");
+const { LOCALES } = require("../i18n/index.js");
 
 /* 分頁。加一個分頁＝在這裡加一筆，並寫一個 renderXxx。 */
 const SECTIONS = [
@@ -415,21 +416,261 @@ class YaziSettingTab extends PluginSettingTab {
         },
         onReset: async () => { s.decorations = []; await this.commit(); },
       });
-    this.emptyHint(el, "Coming in the next step.");
+
+    if (!s.decorations.length) {
+      this.emptyHint(el, this.t("settings.decorations.empty",
+        "No rules yet. Rows are drawn plain. Add one below, or import a set."));
+    }
+
+    const list = el.createDiv({ cls: "yazi-set-list" });
+    s.decorations.forEach((r, i) => this.decorationCard(list, r, i));
+
     const add = el.createDiv({ cls: "yazi-set-add" });
+    const blank = add.createEl("button", { text: "+ " + this.t("settings.decorations.add", "New rule") });
+    blank.onclick = async () => {
+      s.decorations.push({
+        id: uid(), name: "New rule", enabled: true,
+        when: { field: "type", equals: "" },
+        icon: { from: "fixed", value: "📄" },
+      });
+      await this.commit();
+    };
     for (const ex of EXAMPLE_DECORATIONS) {
       const b = add.createEl("button", { text: "+ " + ex.name });
       b.onclick = async () => {
-        s.decorations.push(Object.assign({}, ex, { id: uid() }));
+        s.decorations.push(Object.assign(JSON.parse(JSON.stringify(ex)), { id: uid() }));
         await this.commit();
       };
     }
   }
 
+  decorationCard(list, r, i) {
+    const s = this.plugin.settings;
+    const when = r.when || {};
+    const cond = when.field
+      ? when.field + " = " + (Array.isArray(when.in) ? when.in.join(" / ") : when.equals)
+      : this.t("settings.decorations.noCondition", "no condition");
+
+    const card = new RuleCard(list, {
+      title: r.name || r.id || "(untitled)",
+      subtitle: cond,
+      badge: (r.icon && (r.icon.value || (r.icon.field ? "{" + r.icon.field + "}" : ""))) || "",
+      enabled: r.enabled,
+      onToggle: async (v) => { r.enabled = v; await this.commit(); },
+      onDelete: async () => { s.decorations.splice(i, 1); await this.commit(); },
+      onMove: async (d) => {
+        const j = i + d;
+        if (j < 0 || j >= s.decorations.length) return;
+        s.decorations.splice(j, 0, s.decorations.splice(i, 1)[0]);
+        await this.commit();
+      },
+    });
+    const body = card.body;
+
+    new Setting(body)
+      .setName(this.t("settings.decorations.name", "Name"))
+      .addText((tc) => tc.setValue(r.name || "").onChange(async (v) => { r.name = v; await this.save(); }));
+
+    /* 命中條件：一個 frontmatter 欄位等於某個值（或屬於幾個值之一）。
+       ⚠️ 規則由上而下比對，第一條命中就用它 —— 所以順序有意義，卡片可以上下移動。 */
+    new Setting(body)
+      .setName(this.t("settings.decorations.when", "Applies when"))
+      .setDesc(this.t("settings.decorations.whenDesc",
+        "A frontmatter field equals this value. Several values: separate with commas. " +
+        "Rules are matched top to bottom; the first match wins."))
+      .addText((tc) => tc.setPlaceholder("type").setValue(when.field || "")
+        .onChange(async (v) => { r.when = Object.assign({}, r.when, { field: v }); await this.save(); }))
+      .addText((tc) => tc.setPlaceholder("task, bug")
+        .setValue(Array.isArray(when.in) ? when.in.join(", ") : (when.equals || ""))
+        .onChange(async (v) => {
+          const parts = v.split(",").map((x) => x.trim()).filter(Boolean);
+          const next = { field: (r.when && r.when.field) || "" };
+          if (parts.length > 1) next.in = parts;
+          else next.equals = parts[0] || "";
+          r.when = next;
+          await this.save();
+        }));
+
+    this.sourceSetting(body, r, "icon",
+      this.t("settings.decorations.icon", "Icon"),
+      this.t("settings.decorations.iconDesc", "Replaces the bullet in front of the row."),
+      ["fixed", "field", "map"]);
+
+    this.sourceSetting(body, r, "title",
+      this.t("settings.decorations.title", "Title"),
+      this.t("settings.decorations.titleDesc",
+        "What the row shows instead of the file name. Useful when the file name is a date or an id."),
+      ["none", "field", "fixed"]);
+
+    this.sourceSetting(body, r, "subtitle",
+      this.t("settings.decorations.subtitle", "Secondary text"),
+      this.t("settings.decorations.subtitleDesc", "Small text on the right. Only drawn when the title came from a field."),
+      ["none", "basename", "filename", "field"]);
+
+    /* 剩下那些（狀態對照表、優先度權重、變淡條件、面板欄位順序）是巢狀資料，
+       用表單編輯會變成一頁三十個輸入框。這裡給 JSON —— 誠實面對它的形狀，
+       而且整條規則能直接複製給別人。 */
+    const adv = body.createDiv({ cls: "yazi-set-adv" });
+    adv.createEl("div", { cls: "yazi-set-ph-title", text: this.t("settings.decorations.advanced", "Advanced (JSON)") });
+    adv.createEl("div", { cls: "yazi-set-desc", text: this.t("settings.decorations.advancedDesc",
+      "status / priority / dimWhen / pinWhen / overdue / panel. Edit as JSON and press Apply.") });
+    const ta = adv.createEl("textarea", { cls: "yazi-set-args" });
+    ta.rows = 8;
+    const advKeys = ["status", "priority", "dimWhen", "pinWhen", "statusWhen", "overdue", "panel", "group"];
+    const advOf = (rule) => {
+      const o = {};
+      for (const k of advKeys) if (rule[k] !== undefined) o[k] = rule[k];
+      return o;
+    };
+    ta.value = JSON.stringify(advOf(r), null, 2);
+    const apply = adv.createEl("button", { cls: "mod-cta", text: this.t("settings.apply", "Apply") });
+    apply.onclick = async () => {
+      let parsed = null;
+      try {
+        parsed = JSON.parse(ta.value || "{}");
+      } catch (e) {
+        new Notice("Not valid JSON: " + e.message);
+        return;
+      }
+      for (const k of advKeys) delete r[k];
+      Object.assign(r, parsed);
+      await this.commit();
+    };
+  }
+
+  /** icon / title / subtitle 共用的「來源」設定列。 */
+  sourceSetting(body, rule, key, name, desc, froms) {
+    const spec = rule[key] || {};
+    const set = new Setting(body).setName(name).setDesc(desc);
+
+    set.addDropdown((d) => {
+      for (const f of froms) d.addOption(f, f);
+      d.setValue(spec.from || froms[0]).onChange(async (v) => {
+        rule[key] = Object.assign({}, rule[key], { from: v });
+        await this.commit();
+      });
+    });
+
+    if (spec.from === "field" || spec.from === "map") {
+      set.addText((tc) => tc.setPlaceholder("field name").setValue(spec.field || "")
+        .onChange(async (v) => { rule[key] = Object.assign({}, rule[key], { field: v }); await this.save(); }));
+    }
+    if (spec.from === "fixed") {
+      set.addText((tc) => tc.setPlaceholder("📄").setValue(spec.value || "")
+        .onChange(async (v) => { rule[key] = Object.assign({}, rule[key], { value: v }); await this.save(); }));
+    }
+    if (spec.from === "map") {
+      set.addTextArea((ta) => {
+        ta.inputEl.rows = 3;
+        ta.inputEl.addClass("yazi-set-args");
+        ta.setPlaceholder('{"bug": "🐞"}').setValue(JSON.stringify(spec.map || {}))
+          .onChange(async (v) => {
+            try {
+              rule[key] = Object.assign({}, rule[key], { map: JSON.parse(v || "{}") });
+              await this.save();
+            } catch (e) { /* 打到一半的 JSON 是常態，不要每按一鍵就噴錯 */ }
+          });
+      });
+    }
+    if (spec.from === "field") {
+      set.addDropdown((d) => d
+        .addOption("", this.t("settings.decorations.noFallback", "no fallback"))
+        .addOption("filename", "filename")
+        .addOption("basename", "basename")
+        .setValue(spec.fallback || "")
+        .onChange(async (v) => {
+          rule[key] = Object.assign({}, rule[key], { fallback: v || undefined });
+          await this.save();
+        }));
+    }
+  }
+
+  /* ════════════════════ 搜尋條件 ════════════════════ */
+
   renderSearch(el) {
+    const s = this.plugin.settings;
     this.header(el, this.t("settings.section.search", "Search fields"),
-      this.t("settings.search.desc", "Which frontmatter fields become search conditions."));
-    this.emptyHint(el, "Coming in the next step.");
+      this.t("settings.search.desc",
+        "The conditions offered while searching. Each one has a key you can press directly, " +
+        "and its values are read from the vault, so you only ever see values that actually exist."),
+      {
+        onExport: () => s.facets,
+        onImport: async (parsed) => {
+          if (!Array.isArray(parsed)) { new Notice("Expected a JSON array"); return; }
+          s.facets = parsed;
+          await this.commit();
+        },
+        onReset: async () => { s.facets = defaultSettings().facets; await this.commit(); },
+      });
+
+    const list = el.createDiv({ cls: "yazi-set-list" });
+    s.facets.forEach((f, i) => this.facetCard(list, f, i));
+
+    const add = el.createDiv({ cls: "yazi-set-add" });
+    const b = add.createEl("button", { text: "+ " + this.t("settings.search.add", "Frontmatter field") });
+    b.onclick = async () => {
+      s.facets.push({ id: uid(), key: "", icon: "🔖", label: "New field", kind: "fm", field: "", enabled: true });
+      await this.commit();
+    };
+  }
+
+  facetCard(list, f, i) {
+    const s = this.plugin.settings;
+    const kindLabel = {
+      path: this.t("settings.search.kind.path", "folder"),
+      tag: this.t("settings.search.kind.tag", "tag"),
+      ext: this.t("settings.search.kind.ext", "extension"),
+      free: this.t("settings.search.kind.free", "free text"),
+      fm: this.t("settings.search.kind.fm", "frontmatter"),
+    }[f.kind] || f.kind;
+
+    const card = new RuleCard(list, {
+      title: (f.icon ? f.icon + "  " : "") + (f.label || f.id),
+      subtitle: kindLabel + (f.kind === "fm" && f.field ? " · " + f.field : ""),
+      badge: f.key ? "^" + f.key : "",
+      enabled: f.enabled,
+      onToggle: async (v) => { f.enabled = v; await this.commit(); },
+      onDelete: async () => { s.facets.splice(i, 1); await this.commit(); },
+      onMove: async (d) => {
+        const j = i + d;
+        if (j < 0 || j >= s.facets.length) return;
+        s.facets.splice(j, 0, s.facets.splice(i, 1)[0]);
+        await this.commit();
+      },
+    });
+    const body = card.body;
+
+    new Setting(body).setName(this.t("settings.search.label", "Label"))
+      .addText((tc) => tc.setValue(f.label || "").onChange(async (v) => { f.label = v; await this.save(); }));
+
+    new Setting(body).setName(this.t("settings.search.icon", "Icon"))
+      .addText((tc) => { tc.inputEl.style.width = "4em";
+        tc.setValue(f.icon || "").onChange(async (v) => { f.icon = v; await this.save(); }); });
+
+    new Setting(body)
+      .setName(this.t("settings.search.key", "Direct key"))
+      .setDesc(this.t("settings.search.keyDesc", "Pressed with Ctrl while searching. Avoid j and k — those move the selection."))
+      .addText((tc) => { tc.inputEl.maxLength = 1; tc.inputEl.style.width = "3em";
+        tc.setValue(f.key || "").onChange(async (v) => { f.key = v; await this.save(); }); });
+
+    new Setting(body)
+      .setName(this.t("settings.search.kind", "Kind"))
+      .addDropdown((d) => d
+        .addOption("fm", this.t("settings.search.kind.fm", "frontmatter"))
+        .addOption("path", this.t("settings.search.kind.path", "folder"))
+        .addOption("tag", this.t("settings.search.kind.tag", "tag"))
+        .addOption("ext", this.t("settings.search.kind.ext", "extension"))
+        .addOption("free", this.t("settings.search.kind.free", "free text"))
+        .setValue(f.kind || "fm")
+        .onChange(async (v) => { f.kind = v; await this.commit(); }));
+
+    if (f.kind === "fm") {
+      new Setting(body)
+        .setName(this.t("settings.search.field", "Frontmatter field"))
+        .setDesc(this.t("settings.search.fieldDesc", "Its values are collected from the vault, with counts."))
+        .addText((tc) => tc.setPlaceholder("status").setValue(f.field || "")
+          .onChange(async (v) => { f.field = v; await this.save(); }));
+    }
   }
 
   /* ════════════════════ 預覽與行為 ════════════════════ */
@@ -437,6 +678,19 @@ class YaziSettingTab extends PluginSettingTab {
   renderPreview(el) {
     const s = this.plugin.settings;
     this.header(el, this.t("settings.section.preview", "Preview & behaviour"), "");
+
+    new Setting(el)
+      .setName(this.t("settings.language", "Language"))
+      .setDesc(this.t("settings.languageDesc", "Follow Obsidian, or pick one explicitly."))
+      .addDropdown((d) => {
+        for (const l of LOCALES) d.addOption(l.id, l.label);
+        d.setValue(s.locale || "auto").onChange(async (v) => {
+          s.locale = v;
+          await this.save();
+          this.plugin.reloadTranslator();
+          this.display();   // 整頁重畫，不然只有下一次開設定才會變成新語言
+        });
+      });
 
     new Setting(el)
       .setName(this.t("settings.preview.render", "Render markdown"))

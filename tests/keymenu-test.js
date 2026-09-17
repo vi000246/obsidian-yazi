@@ -29,7 +29,9 @@ const dump = (n) => n.children.map((c) => c.cls + (c.text ? ":" + c.text : "") +
 const folder = { path: "100 工作", children: [] };
 const app = { vault: { adapter: { getBasePath: () => "C:" }, getName: () => "MainRepo",
                        getAbstractFileByPath: (p) => (p === "100 工作" ? folder : null) } };
-const plugin = { t: (k, f) => f || k, settings: { openers: [
+/* 用真的英文語言檔當 t()：漏掉的 key 會以「畫面上出現 key 名稱」的形狀現形 */
+const EN = require("../src/i18n/en.js");
+const plugin = { t: (k, f) => EN[k] || f || k, settings: { openers: [
   { id: "dir", label: "開資料夾", key: "f", appliesTo: "folder", kind: "system", enabled: true },
   { id: "c", label: "Claude Code", key: "c", appliesTo: "both", kind: "command", enabled: true, command: "claude" },
   { id: "g", label: "lazygit", key: "g", appliesTo: "both", kind: "command", enabled: true, command: "lazygit" },
@@ -53,7 +55,7 @@ eq("沒有 pending：卡片收起來", m.menuEl.hidden, true);
 
 m.pending = "open"; m.renderKeyMenu();
 eq("O：卡片打開", m.menuEl.hidden, false);
-eq("O：標題列", dump(m.kmTitleEl), ["yazi-km-prefix:O", "yazi-km-desc:用 vault 外面的程式開　·　100 工作"]);
+eq("O：標題列", dump(m.kmTitleEl), ["yazi-km-prefix:O", "yazi-km-desc:" + EN["menu.open.desc"] + "　·　100 工作"]);
 eq("O：項目列", dump(m.kmItemsEl), [
   "yazi-km-row[yazi-km-key:f,yazi-km-label:開資料夾]",
   "yazi-km-row[yazi-km-key:c,yazi-km-label:Claude Code]",
@@ -62,7 +64,7 @@ eq("O：項目列", dump(m.kmItemsEl), [
   "yazi-km-row[yazi-km-key:r,yazi-km-label:在總管顯示]",
 ]);
 eq("O：5 項＝一欄 5 列", m.kmItemsEl.style.props["--km-rows"], "5");
-eq("O：底下那行", m.kmHintEl.text, "Esc 取消");
+eq("O：底下那行", m.kmHintEl.text, "Esc to cancel");
 
 m.pending = "sort"; m.renderKeyMenu();
 eq("S：11 項＝兩欄 6 列", m.kmItemsEl.style.props["--km-rows"], "6");
@@ -70,7 +72,7 @@ eq("S：項目數", m.kmItemsEl.children.length, 11);
 
 m.pending = "assign"; m.renderKeyMenu();
 eq("m：沒有項目、只有說明", [m.kmItemsEl.children.length, m.kmHintEl.text],
-   [0, "按一個字母指定；Backspace 清除　·　Esc 取消"]);
+   [0, EN["menu.assign.note"] + "　·　Esc to cancel"]);
 
 m.pending = null; m.renderKeyMenu();
 eq("按完之後又收起來", m.menuEl.hidden, true);

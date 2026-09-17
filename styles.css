@@ -1120,3 +1120,15 @@ input.yazi-input {
   color: var(--text-faint);
   font-size: var(--font-ui-smaller);
 }
+
+/* 規則卡裡的「進階（JSON）」區：巢狀資料用表單編會變成一頁三十個輸入框，
+   這裡誠實給 JSON，順便讓整條規則可以直接複製給別人。 */
+.yazi-set-adv {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--background-secondary);
+}
+
+.yazi-set-adv .yazi-set-desc { margin: 2px 0 6px; }
+.yazi-set-adv textarea { margin-bottom: 6px; }

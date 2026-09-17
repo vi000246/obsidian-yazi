@@ -51,17 +51,17 @@ ok("標題留著", out.includes("# 專案筆記"), out);
 ok("dataviewjs 整段不見", !out.includes("dataviewjs") && !out.includes("processFrontMatter"), out);
 ok("tasks 區塊不見", !out.includes("```tasks") && !out.includes("not done"), out);
 ok("meta-bind 控制列整行不見", !/INPUT\[|BUTTON\[|VIEW\[/.test(out), out);
-ok("行內 dataview 查詢被換掉", !out.includes("this.file.name") && !out.includes("dv.pages().length") && out.includes("[行內查詢]"), out);
-ok("筆記內嵌被換成佔位字", !out.includes("![[🏠 dashboard]]") && out.includes("[內嵌筆記：🏠 dashboard]"), out);
+ok("行內 dataview 查詢被換掉", !out.includes("this.file.name") && !out.includes("dv.pages().length") && out.includes("[inline query]"), out);
+ok("筆記內嵌被換成佔位字", !out.includes("![[🏠 dashboard]]") && out.includes("[embedded note: 🏠 dashboard]"), out);
 ok("圖片內嵌保留", out.includes("![[架構圖.png]]"), out);
 ok("PDF 內嵌保留", out.includes("![[規格書.pdf]]"), out);
 ok("一般 ```js 區塊保留", out.includes("```js") && out.includes("要留著"), out);
 
 /* 內嵌的各種寫法 */
 const cases = [
-  ["![[note#段落]]", "[內嵌筆記：note]", "帶 heading 的內嵌"],
-  ["![[note|別名]]", "[內嵌筆記：note]", "帶別名的內嵌"],
-  ["![[資料夾/筆記.md]]", "[內嵌筆記：資料夾/筆記.md]", ".md 副檔名也算筆記"],
+  ["![[note#段落]]", "[embedded note: note]", "帶 heading 的內嵌"],
+  ["![[note|別名]]", "[embedded note: note]", "帶別名的內嵌"],
+  ["![[資料夾/筆記.md]]", "[embedded note: 資料夾/筆記.md]", ".md 副檔名也算筆記"],
   ["![[clip.mp4]]", "![[clip.mp4]]", "影片保留"],
   ["[[一般連結]]", "[[一般連結]]", "非內嵌的連結不動"],
 ];
