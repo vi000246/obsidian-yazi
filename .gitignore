@@ -1,0 +1,17 @@
+# 建置產物（release 時才附上，平常不進 git）
+main.js
+main.js.map
+
+# 本機開發設定：指向自己 vault 的 plugin 資料夾
+.env.local
+
+# 依賴
+node_modules/
+
+# 個人資料 —— 絕對不要進 repo
+data.json
+text-index.json
+
+# 編輯器 / 系統
+.DS_Store
+*.swp

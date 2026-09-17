@@ -1,0 +1,30 @@
+{
+  "name": "obsidian-yazi",
+  "version": "0.1.0",
+  "description": "A yazi-style keyboard-driven file explorer for Obsidian: miller columns, live preview, fuzzy search, bookmarks and custom openers.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "build": "node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs",
+    "test": "node scripts/run-tests.mjs",
+    "version": "node scripts/version-bump.mjs && git add manifest.json versions.json"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "file-explorer",
+    "yazi",
+    "ranger",
+    "miller-columns",
+    "vim",
+    "keyboard"
+  ],
+  "author": "Logan Lin",
+  "license": "MIT",
+  "devDependencies": {
+    "builtin-modules": "^4.0.0",
+    "esbuild": "^0.25.0",
+    "obsidian": "^1.7.2"
+  }
+}
