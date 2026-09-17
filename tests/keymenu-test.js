@@ -26,9 +26,9 @@ const el = (tag, cls) => {
 };
 const dump = (n) => n.children.map((c) => c.cls + (c.text ? ":" + c.text : "") + (c.children.length ? "[" + dump(c).join(",") + "]" : ""));
 
-const folder = { path: "100 工作", children: [] };
-const app = { vault: { adapter: Object.assign(new stub.obsidian.FileSystemAdapter(), { getBasePath: () => "C:" }), getName: () => "MainRepo",
-                       getAbstractFileByPath: (p) => (p === "100 工作" ? folder : null) } };
+const folder = { path: "work", children: [] };
+const app = { vault: { adapter: Object.assign(new stub.obsidian.FileSystemAdapter(), { getBasePath: () => "C:" }), getName: () => "Vault",
+                       getAbstractFileByPath: (p) => (p === "work" ? folder : null) } };
 /* 用真的英文語言檔當 t()：漏掉的 key 會以「畫面上出現 key 名稱」的形狀現形 */
 const EN = require("../src/i18n/en.js");
 const plugin = { t: (k, f) => EN[k] || f || k, settings: { openers: [
@@ -55,7 +55,7 @@ eq("沒有 pending：卡片收起來", m.menuEl.hidden, true);
 
 m.pending = "open"; m.renderKeyMenu();
 eq("O：卡片打開", m.menuEl.hidden, false);
-eq("O：標題列", dump(m.kmTitleEl), ["yazi-km-prefix:O", "yazi-km-desc:" + EN["menu.open.desc"] + "　·　100 工作"]);
+eq("O：標題列", dump(m.kmTitleEl), ["yazi-km-prefix:O", "yazi-km-desc:" + EN["menu.open.desc"] + "　·　work"]);
 eq("O：項目列", dump(m.kmItemsEl), [
   "yazi-km-row[yazi-km-key:f,yazi-km-label:開資料夾]",
   "yazi-km-row[yazi-km-key:c,yazi-km-label:Claude Code]",

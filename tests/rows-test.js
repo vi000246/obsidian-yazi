@@ -34,16 +34,16 @@ let fail = 0;
 const eq = (n, got, want) => { const ok = JSON.stringify(got) === JSON.stringify(want); if (!ok) fail++;
   console.log((ok ? "PASS " : "FAIL ") + n + "\n   → " + JSON.stringify(got) + (ok ? "" : "\n   want " + JSON.stringify(want))); };
 
-const D1 = file("200 Personal/001 日記/2026/2026-09-13.md");
-const D2 = file("200 Personal/001 日記/2026/2026-09-10.md");
-const OTHER = file("100 工作/一般筆記.md");
-fmOf.set(D1.path, { type: "diary", date: "2026-09-13", title: "九份二日遊", mood: "🤩", category: "旅行" });
+const D1 = file("journal/2026/2026-09-13.md");
+const D2 = file("journal/2026/2026-09-10.md");
+const OTHER = file("work/note.md");
+fmOf.set(D1.path, { type: "diary", date: "2026-09-13", title: "A weekend away", mood: "🤩", category: "旅行" });
 fmOf.set(D2.path, { type: "diary", date: "2026-09-10", mood: "😩" });        // 沒填標題
 
 const box = el();
 mk().renderColumn(box, [D1, D2], D1.path, true);
 eq("有標題：emoji ＋ 標題當主文字 ＋ 日期在右邊小字", dump(box.children[0]),
-   ["yazi-icon:🤩", "yazi-name:九份二日遊", "yazi-sub is-date:2026-09-13"]);
+   ["yazi-icon:🤩", "yazi-name:A weekend away", "yazi-sub is-date:2026-09-13"]);
 eq("沒填標題：退回檔名，不留空白列", dump(box.children[1]),
    ["yazi-icon:😩", "yazi-name:2026-09-10.md"]);
 
@@ -53,7 +53,7 @@ eq("父層欄不換標題（只有 emoji）", dump(box2.children[0]), ["yazi-ico
 
 const box3 = el();
 mk().renderColumn(box3, [OTHER], OTHER.path, true);
-eq("一般筆記照舊", dump(box3.children[0]), ["yazi-icon:·", "yazi-name:一般筆記.md"]);
+eq("note照舊", dump(box3.children[0]), ["yazi-icon:·", "yazi-name:note.md"]);
 
 const box4 = el();
 const m4 = mk(); m4.sel.add(D1.path);
@@ -61,11 +61,11 @@ m4.renderColumn(box4, [D1], D1.path, true);
 eq("選取時 ✓ 優先於心情 emoji", dump(box4.children[0])[0], "yazi-icon:✓");
 
 // type 不是 diary 的筆記就算有 mood 也不裝飾（避免別處的欄位撞名）
-const FAKE = file("500 Programing/筆記.md");
+const FAKE = file("500 Programing/note.md");
 fmOf.set(FAKE.path, { type: "note", mood: "🤩", title: "不該被當成日記" });
 const box5 = el();
 mk().renderColumn(box5, [FAKE], FAKE.path, true);
-eq("type 不是 diary 就不裝飾", dump(box5.children[0]), ["yazi-icon:·", "yazi-name:筆記.md"]);
+eq("type 不是 diary 就不裝飾", dump(box5.children[0]), ["yazi-icon:·", "yazi-name:note.md"]);
 
 console.log(fail ? "\n" + fail + " 項失敗" : "\n全部通過");
 process.exit(fail ? 1 : 0);

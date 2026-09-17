@@ -90,9 +90,9 @@ r = d({ type: "doc", missing: true, status: "draft" });
 eq("doc：原檔不見了 → 狀態換成 missing 並變淡", pick(r, ["status", "dim"]), { status: "missing", dim: true });
 
 /* ── diary ── */
-r = d({ type: "diary", mood: "🤩", title: "九份二日遊" });
+r = d({ type: "diary", mood: "🤩", title: "A weekend away" });
 eq("diary：心情當圖示、標題當主文字、檔名縮到右邊",
-   pick(r, ["icon", "title", "subtitle"]), { icon: "🤩", title: "九份二日遊", subtitle: "2026-09-13" });
+   pick(r, ["icon", "title", "subtitle"]), { icon: "🤩", title: "A weekend away", subtitle: "2026-09-13" });
 eq("diary：沒填標題就退回檔名（含副檔名，跟平常的列一樣）", d({ type: "diary", mood: "😄" }).title, "2026-09-13.md");
 eq("diary：退回檔名時不算「標題來自欄位」，右邊就不會再印一次日期", d({ type: "diary", mood: "😄" }).titleFromField, false);
 
