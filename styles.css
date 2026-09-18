@@ -97,6 +97,28 @@
   opacity: 0.72;
 }
 
+/* 關聯（gr）的分組標題。不是清單項目 —— 游標不會停在上面 */
+.yazi-group {
+  padding: 8px 10px 2px;
+  font-size: 0.78em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.yazi-group:first-child {
+  padding-top: 2px;
+}
+
+/* 大綱（go）：依標題層級縮排。層級是相對這篇最淺的那層算的（core/outline.js），
+   所以從 H2 開始的筆記不會整份先空一格。 */
+.yazi-row.is-outline.yazi-outline-d1 .yazi-name { padding-left: 1.2em; }
+.yazi-row.is-outline.yazi-outline-d2 .yazi-name { padding-left: 2.4em; }
+.yazi-row.is-outline.yazi-outline-d3 .yazi-name { padding-left: 3.6em; }
+.yazi-row.is-outline.yazi-outline-d4 .yazi-name { padding-left: 4.8em; }
+.yazi-row.is-outline.yazi-outline-d5 .yazi-name { padding-left: 6em; }
+
 /* 游標列：主欄用實心強調，父層欄用淡的，一眼分得出焦點在哪一欄 */
 .yazi-row.is-cursor {
   background: var(--text-accent);
@@ -350,6 +372,13 @@ input.yazi-input {
 
 .yazi-root.is-help .yazi-col {
   padding: 8px 12px;
+}
+
+/* 說明頁的第一欄剛好住在 .yazi-col-parent 裡，會吃到它那個 opacity: 0.62。
+   那個淡化是為了讓「父資料夾」退到背景，但說明頁的三欄地位相同，
+   不該有一欄看起來比較淡。 */
+.yazi-root.is-help .yazi-col-parent {
+  opacity: 1;
 }
 
 /* 三欄各只有三分之一寬，按鍵欄要收窄，否則說明文字沒空間 */

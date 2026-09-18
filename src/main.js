@@ -47,6 +47,9 @@ const { createTranslator } = require("./i18n/index.js");
 const { resolveOpeners, platformId, opnerVars, buildCommand } = require("./core/openers.js");
 const { decorate } = require("./core/decorate.js");
 const { parseKeymap } = require("./core/keymap.js");
+const { outlineItems, headingLines } = require("./core/outline.js");
+const { collectRelations } = require("./core/relations.js");
+const { aliasesOf } = require("./core/aliases.js");
 
 /*
  * 存檔進來的設定 ＋ 預設值。
@@ -119,6 +122,7 @@ const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif"]);
 const PREVIEW_MAX_CHARS = 20000;
 const PREVIEW_MAX_LINES = 400;
 const PREVIEW_SEEK_LINES = 5;   // J / K 一次捲幾行（＝ yazi 的 seek 5 / seek -5）
+const OUTLINE_PAD = 6;          // 大綱跳到標題時，標題上緣留幾 px，不要貼死在欄頂
 
 /*
  * 捲預覽欄的 Ctrl 組合：vim 捲 buffer 的那一套原封照搬。
@@ -388,6 +392,9 @@ const HELP = [
   ["b", "help.list.b"],
   ["rf", "help.list.rf"],
   ["z", "help.list.z"],
+  ["go", "help.list.go"],
+  ["gr", "help.list.gr"],
+  ["(relations) Enter / l", "help.list.grJump"],
   ["(in a list) x", "help.list.x"],
   ["(in a list) q / Esc", "help.list.back"],
   ["help.sec.bookmarks"],
@@ -441,7 +448,8 @@ const HELP = [
 const PENDING_MENUS = {
   g: {
     descKey: "menu.g.desc",
-    items: [["g", "menu.g.g"], ["t", "menu.g.t"], ["f", "menu.g.f"], ["d", "menu.g.d"], ["b", "menu.g.b"]],
+    items: [["g", "menu.g.g"], ["t", "menu.g.t"], ["f", "menu.g.f"], ["d", "menu.g.d"],
+            ["o", "menu.g.o"], ["r", "menu.g.r"], ["b", "menu.g.b"]],
   },
   c: {
     descKey: "menu.c.desc",
@@ -477,6 +485,11 @@ class YaziModal extends Modal {
     this.listIndex = 0;
     this.searchQuery = "";   // 搜尋關鍵字（Enter 收起輸入列後還要留著）
     this.listFilter = "";    // 在搜尋結果裡再過濾一層
+    this.outlineFile = null; // 大綱檢視（go）在看哪個檔
+    this.outlineFrom = null; // 從哪份清單進到大綱的（h/q/Esc 要退回去）；檔案檢視進來的是 null
+    this.relFile = null;     // 關聯檢視（gr）以哪個檔為中心
+    this.relStack = [];      // 沿著關聯一路走過來的檔（h 一次退一步）
+    this.previewPath = null; // 右欄目前畫的是哪個檔（大綱檢視靠它決定「只捲不重畫」）
     this.facets = [];        // 搜尋條件 chip（見 FACETS 常數的長註解）
     this.sug = null;         // 建議清單 {items, index}
     this.sugField = null;    // 正在挑哪個欄位的值（null = 還沒指定欄位）
@@ -859,15 +872,20 @@ class YaziModal extends Modal {
     this.openFile(cur, mode);
   }
 
-  openFile(file, mode) {
+  /*
+   * line：開檔後把編輯器定位到那一行（大綱檢視的 Enter）。走 OpenViewState 的 eState，
+   * 跟 Obsidian 自己的大綱面板／搜尋結果跳行用的是同一條路。
+   */
+  openFile(file, mode, line) {
     const ws = this.app.workspace;
+    const state = typeof line === "number" ? { eState: { line } } : {};
 
     // gf：背景開新分頁。不搶焦點、也不關 modal —— 這顆鍵的用途就是「先把幾個檔
     // 開起來待會看」，關掉 modal 反而毀了這個流程。
     if (mode === "tab-bg") {
       const prev = ws.getMostRecentLeaf(ws.rootSplit);
       const leaf = ws.getLeaf("tab");
-      leaf.openFile(file, { active: false }).then(() => {
+      leaf.openFile(file, Object.assign({ active: false }, state)).then(() => {
         // 把「最近使用的分頁」還原回原本那個。不還原的話，接下來按 o 會開在剛剛
         // 背景開的那個分頁上，等於把它蓋掉 —— 連開多個檔就失效了。
         if (prev) ws.setActiveLeaf(prev, { focus: false });
@@ -882,12 +900,14 @@ class YaziModal extends Modal {
     else if (mode === "hsplit") leaf = ws.getLeaf("split", "horizontal");
     else leaf = ws.getLeaf(false);
     this.close();
-    leaf.openFile(file).then(() => ws.setActiveLeaf(leaf, { focus: true }));
+    leaf.openFile(file, state).then(() => ws.setActiveLeaf(leaf, { focus: true }));
   }
 
   /* ── 清單檢視（分頁 / 書籤 / 最近）── */
 
   openList(view) {
+    if (view !== "outline") this.outlineFrom = null;   // 換到別的清單，大綱的返回點就失效了
+    if (view !== "relations") this.relStack = [];      // 同理，關聯的走訪紀錄
     this.view = view;
     this.listIndex = 0;
     this.showHelp = false;
@@ -1082,20 +1102,39 @@ class YaziModal extends Modal {
     const match = makeMatcher(q);
     const scored = [];
     for (const f of pool) {
-      const r = match(f.path);
-      if (r) scored.push({ f, score: r.score });
+      let best = match(f.path);
+      let via = null;
+      /*
+       * frontmatter 的 aliases 也算命中，取最高分那個當代表。日記檔名是日期、靠標題
+       * 才記得的那種筆記，別名往往才是人腦裡的名字 —— 只比路徑會找不到。
+       */
+      for (const a of this.fileAliases(f)) {
+        const r = match(a);
+        if (r && (!best || r.score > best.score)) {
+          best = r;
+          via = a;
+        }
+      }
+      if (best) scored.push({ f, score: best.score, via });
     }
     scored.sort((a, b) => b.score - a.score);
-    this.listItems = scored.slice(0, SEARCH_LIMIT).map(({ f }) => this.searchItem(f));
+    this.listItems = scored.slice(0, SEARCH_LIMIT).map(({ f, via }) => this.searchItem(f, via));
   }
 
-  searchItem(f) {
+  // 靠別名命中的列別名、路徑放小字 —— 跟 Quick Switcher 一樣，看得出「這筆為什麼會出現」
+  searchItem(f, via) {
     return {
-      label: f.name || this.t("ui.vaultRoot", "(vault root)"),
+      label: via || f.name || this.t("ui.vaultRoot", "(vault root)"),
       sub: f.path,
       path: f.path,
       file: isFolder(f) ? null : f,
     };
+  }
+
+  fileAliases(f) {
+    if (!f || isFolder(f) || (f.extension || "").toLowerCase() !== "md") return [];
+    const c = this.app.metadataCache.getFileCache(f);
+    return aliasesOf(c && c.frontmatter);
   }
 
   /* ── 搜尋條件（facet）—— 設計說明見上方 FACETS 常數 ────────────────── */
@@ -1469,6 +1508,23 @@ class YaziModal extends Modal {
   }
 
   backToFiles() {
+    // 沿關聯走過來的：h 一次退一步，回到上一個中心，而不是一路跳回檔案檢視
+    if (this.view === "relations" && this.relStack.length) {
+      this.relFile = this.relStack.pop();
+      this.listFilter = "";
+      this.listIndex = 0;
+      this.buildList();
+      this.render();
+      return;
+    }
+    // 從某份清單進到大綱的，退回那份清單（項目與游標都原樣還在），不是跳回檔案檢視
+    if (this.view === "outline" && this.outlineFrom) {
+      Object.assign(this, this.outlineFrom);
+      this.outlineFrom = null;
+      this.render();
+      return;
+    }
+    this.outlineFrom = null;
     this.view = "files";
     this.listItems = [];
     // 組合卡是搜尋專屬的，回檔案檢視一定要關掉，否則會蓋住整個版面
@@ -1682,8 +1738,9 @@ class YaziModal extends Modal {
      * 名稱排，至少還是同一批檔的另一種看法），但「常用」整個價值就在那個名次 ——
      * 照名稱排之後跟隨機挑 60 筆沒有分別，等於這個檢視消失。
      * 要換角度看就用 / 過濾。
+     * 大綱同理：標題的順序就是文章的順序，照名稱排等於把文章打散。
      */
-    if (cfg.field !== "natural" && this.view !== "frecency") {
+    if (cfg.field !== "natural" && this.view !== "frecency" && this.view !== "outline") {
       const pairs = arr.map((it) => ({
         it,
         f: it.file || (it.path ? this.app.vault.getAbstractFileByPath(it.path) : null),
@@ -1704,6 +1761,8 @@ class YaziModal extends Modal {
     else if (this.view === "bookmarks") this.listItems = this.collectBookmarks();
     else if (this.view === "recent") this.listItems = this.collectRecent();
     else if (this.view === "frecency") this.listItems = this.collectFrecency();
+    else if (this.view === "outline") this.listItems = this.collectOutline();
+    else if (this.view === "relations") this.listItems = this.collectRelationItems();
     else this.listItems = [];
     if (this.listIndex >= this.listItems.length) {
       this.listIndex = Math.max(0, this.listItems.length - 1);
@@ -1790,6 +1849,162 @@ class YaziModal extends Modal {
     return out;
   }
 
+  /* ── 大綱（go）──
+   *
+   * 游標所指筆記的標題清單，開在清單檢視裡（j/k/Enter/過濾都跟書籤、搜尋結果同一套）。
+   * 跟其他清單的差別在右欄：**同一個檔不重畫，只捲到游標所指的標題**（見 renderPreview），
+   * 所以 j/k 掃過標題時預覽是即時跟著走的 —— 這是 Quick Switcher 那類「選了才知道跳對沒」
+   * 做不到的事。Enter 開檔並定位到那一行。
+   */
+  openOutline() {
+    const f = this.focusFile();
+    if (!f || (f.extension || "").toLowerCase() !== "md") {
+      new Notice(this.t("notice.outlineOnlyMd", "Outline needs a markdown note under the cursor"));
+      this.render();
+      return;
+    }
+    // 從搜尋結果／書籤清單進來的，記住那份清單，h/q/Esc 退回去（見 backToFiles）
+    this.outlineFrom =
+      this.view === "files"
+        ? null
+        : { view: this.view, listItems: this.listItems, listIndex: this.listIndex, listFilter: this.listFilter };
+    this.outlineFile = f;
+    this.listFilter = "";
+    this.openList("outline");
+  }
+
+  // 游標現在指著哪個檔案：檔案檢視看游標列，清單檢視看清單項目
+  focusFile() {
+    if (this.view === "files") {
+      const c = this.current();
+      return c && !isFolder(c) ? c : null;
+    }
+    const it = this.listCurrent();
+    return it && it.file ? it.file : null;
+  }
+
+  collectOutline() {
+    const f = this.outlineFile;
+    if (!f) return [];
+    const c = this.app.metadataCache.getFileCache(f);
+    return outlineItems(c && c.headings, this.t("ui.untitled", "(untitled)")).map((h) =>
+      Object.assign(h, { file: f, path: f.path, sub: "H" + h.level })
+    );
+  }
+
+  /*
+   * 預覽欄捲到游標所指的標題。用「第幾個標題」對位（理由見 core/outline.js）。
+   * 渲染版找 <h1>–<h6>，跳過 blockquote / callout 裡的（metadataCache 的 headings 不含
+   * 那些）；純文字版掃 <pre> 內文算行。找不到＝那個標題在截斷點之後 → 捲到底，至少
+   * 讓人知道「在更後面」。渲染是分兩段完成的（先純文字、停下來才換渲染版），所以
+   * renderFilePreview 兩段都會再呼叫一次這裡。
+   */
+  followOutline() {
+    const el = this.previewEl;
+    const item = this.listCurrent();
+    if (!el || !item) return;
+    const base = el.getBoundingClientRect().top - el.scrollTop;   // 內容座標系的原點
+    const md = el.querySelector(".yazi-preview-md");
+    const hs = md
+      ? Array.from(md.querySelectorAll("h1,h2,h3,h4,h5,h6")).filter((h) => !h.closest("blockquote, .callout"))
+      : [];
+    if (hs.length) {
+      const h = hs[item.idx];
+      el.scrollTop = h ? Math.max(0, h.getBoundingClientRect().top - base - OUTLINE_PAD) : el.scrollHeight;
+      return;
+    }
+    const pre = el.querySelector(".yazi-preview-text");
+    if (!pre) {
+      if (md) el.scrollTop = el.scrollHeight;
+      return;
+    }
+    const line = headingLines(pre.textContent)[item.idx];
+    el.scrollTop =
+      line === undefined
+        ? el.scrollHeight
+        : Math.max(0, pre.getBoundingClientRect().top - base + line * this.previewLinePx() - OUTLINE_PAD);
+  }
+
+  /* ── 關聯（gr）──
+   *
+   * 以游標所指的筆記為中心，把 frontmatter 的連結欄位攤成分組清單：
+   * Parent / Children、Up / Down、Related，最後是沒有型別的一般連結與反向連結。
+   * 讀哪些欄位是設定（settings.relations），反向那一組永遠是推導的 —— 理由見
+   * core/relations.js。
+   *
+   * Enter / l ＝**游標跳到那個檔，人留在 yazi**（不是開檔）。這是整個檢視的重點：
+   * 資料夾用 h/l 走，連結用 gr 走，兩者手感一樣，都可以一路走下去再用 h 退回來。
+   * 真的要開檔是 o / t。
+   */
+  openRelations() {
+    const f = this.focusFile();
+    if (!f || (f.extension || "").toLowerCase() !== "md") {
+      new Notice(this.t("notice.relOnlyMd", "Relations need a markdown note under the cursor"));
+      this.render();
+      return;
+    }
+    // 已經在關聯檢視裡再按 gr ＝ 以這一筆為新中心，舊的推進堆疊（h 退回去）
+    const stack = this.view === "relations" && this.relFile ? this.relStack.concat([this.relFile]) : [];
+    this.relFile = f;
+    this.listFilter = "";
+    this.openList("relations");
+    this.relStack = stack;
+    this.render();
+  }
+
+  collectRelationItems() {
+    const file = this.relFile;
+    if (!file) return [];
+    const app = this.app;
+    const mc = app.metadataCache;
+    const rules = (this.plugin && this.plugin.settings && this.plugin.settings.relations) || [];
+    const isMd = (f) => f && !isFolder(f) && (f.extension || "").toLowerCase() === "md";
+    // resolvedLinks 是 { 來源路徑: { 目標路徑: 次數 } }，兩個方向都從這裡算
+    const resolved = mc.resolvedLinks || {};
+    const byPath = (p) => app.vault.getAbstractFileByPath(p);
+
+    const groups = collectRelations(file, rules, {
+      fmOf: (f) => {
+        const c = mc.getFileCache(f);
+        return (c && c.frontmatter) || null;
+      },
+      /*
+       * 連結路徑 → 檔案。先走 Obsidian 自己的解析（相對路徑、別名、短寫都靠它），
+       * 解析不到再退一步用「檔名開頭」比對 —— 有人的 frontmatter 寫的是純 id
+       * （`parent: OB-19`，檔名是 `OB-19 某某標題.md`），那不是合法的連結，
+       * 但看得出來要指哪裡，沒道理當作沒填。
+       */
+      resolve: (linkpath, from) => {
+        const hit = mc.getFirstLinkpathDest ? mc.getFirstLinkpathDest(linkpath, from) : null;
+        if (hit) return hit;
+        const key = linkpath.toLowerCase();
+        return app.vault.getMarkdownFiles().find((f) => {
+          const b = f.basename.toLowerCase();
+          return b === key || b.startsWith(key + " ");
+        }) || null;
+      },
+      mdFiles: () => app.vault.getMarkdownFiles(),
+      linksFrom: (f) => Object.keys(resolved[f.path] || {}).map(byPath).filter(isMd),
+      linksTo: (f) =>
+        Object.keys(resolved)
+          .filter((src) => src !== f.path && resolved[src] && resolved[src][f.path])
+          .map(byPath)
+          .filter(isMd),
+      labels: {
+        links: this.t("ui.relLinks", "Links"),
+        backlinks: this.t("ui.relBacklinks", "Backlinks"),
+      },
+    });
+
+    const out = [];
+    for (const g of groups) {
+      for (const f of g.items) {
+        out.push({ label: f.basename, sub: f.path, path: f.path, file: f, group: g.label });
+      }
+    }
+    return out;
+  }
+
   listCurrent() {
     return this.listItems[this.listIndex] || null;
   }
@@ -1846,6 +2061,18 @@ class YaziModal extends Modal {
       return;
     }
 
+    // 關聯：o / t ＝真的開檔（Enter / l 是跳游標，走 revealRelation）
+    if (this.view === "relations") {
+      if (item.file) this.openFile(item.file, openMode || "current");
+      return;
+    }
+
+    // 大綱：開那個檔，並定位到這個標題那一行
+    if (this.view === "outline") {
+      if (item.file) this.openFile(item.file, openMode || "current", item.line);
+      return;
+    }
+
     // 書籤與最近檔案：資料夾就跳過去，檔案就開啟
     if (item.missing) {
       new Notice(this.t("notice.pathGone", "Path no longer exists: {path}", { path: item.path }));
@@ -1864,10 +2091,20 @@ class YaziModal extends Modal {
     this.openFile(f, openMode || "current");
   }
 
+  // 關聯檢視的 Enter / l：游標跳到那個檔並回到檔案檢視，走訪紀錄就此結束
+  revealRelation() {
+    const item = this.listCurrent();
+    if (!item) return;
+    this.relStack = [];
+    this.revealPath(item.path);
+    this.backToFiles();
+  }
+
   // 清單裡按 x
   removeListItem() {
     const item = this.listCurrent();
     if (!item) return;
+    if (this.view === "outline" || this.view === "relations") return;   // 這兩種清單沒有「刪掉這一列」的意思
 
     if (this.view === "tabs") {
       // detach() 就是關分頁。關掉之後重建清單，游標留在同一個索引 = 下一個分頁。
@@ -2701,7 +2938,13 @@ class YaziModal extends Modal {
         case "K": this.seekPreview("seek", -1); break;
         case "PageDown": this.seekPreview("page", 1); break;
         case "PageUp": this.seekPreview("page", -1); break;
-        case "l": case "Enter": case "o": this.activateListItem("current"); break;
+        // 關聯檢視的 Enter / l 是「游標跳過去，人留在 yazi」（見 openRelations）；
+        // o 在哪裡都是「在 Obsidian 開啟」，所以這裡兩者要分開
+        case "l": case "Enter":
+          if (this.view === "relations") this.revealRelation();
+          else this.activateListItem("current");
+          break;
+        case "o": this.activateListItem("current"); break;
         case "O": this.openMenu(); break;
         case "S": this.pending = "sort"; this.render(); break;
         case "i":
@@ -2837,6 +3080,8 @@ class YaziModal extends Modal {
       else if (key === "t") this.openSearch("text");
       else if (key === "f") this.openSearch("file");
       else if (key === "d") this.openSearch("dir");
+      else if (key === "o") this.openOutline();
+      else if (key === "r") this.openRelations();
       // 背景開新分頁原本是 gf（Surfingkeys 的 gf），gf 讓給「搜檔名」之後搬到 gb
       else if (key === "b") this.enter("tab-bg");
       else this.render();
@@ -3234,6 +3479,10 @@ class YaziModal extends Modal {
     const title =
       this.view === "search"
         ? searchTitle
+        : this.view === "outline"
+        ? this.t("ui.titleOutline", "Outline: {name}", { name: this.outlineFile ? this.outlineFile.basename : "" })
+        : this.view === "relations"
+        ? this.t("ui.titleRelations", "Relations: {name}", { name: this.relFile ? this.relFile.basename : "" })
         : { tabs: this.t("ui.titleTabs", "Tabs"), bookmarks: this.t("ui.titleBookmarks", "Bookmarks"),
             recent: this.t("ui.titleRecent", "Recent"), frecency: this.t("ui.titleFrecency", "Frequently used") }[
             this.view
@@ -3282,10 +3531,26 @@ class YaziModal extends Modal {
             ["/", this.t("legend.refineShort", "filter within the results")],
             ["（×N）", this.t("legend.frecencyCount", "how often you opened it; ranking is count × time decay")],
           ]
+        : this.view === "relations"
+        ? [
+            ["Enter / l", this.t("legend.relJump", "move the cursor there and stay in the explorer")],
+            ["gr", this.t("legend.relWalk", "relations of that note (h steps back)")],
+            ["o / t", this.t("legend.relOpen", "open it / in a new tab")],
+            ["/", this.t("legend.refineShort", "filter within the results")],
+          ]
+        : this.view === "outline"
+        ? [
+            ["j / k", this.t("legend.outlineFollow", "move; the preview scrolls to that heading")],
+            ["Enter / l / o", this.t("legend.outlineOpen", "open the note at this heading")],
+            ["t", this.t("legend.newTab", "open in a new tab")],
+            ["/", this.t("legend.outlineFilter", "filter the headings")],
+          ]
         : [["Enter / l / o", this.t("legend.open", "open")], ["t", this.t("legend.newTab", "open in a new tab")]];
     const back =
       this.view === "search"
         ? [["Esc", this.t("legend.escLayers", "drop the suggestion → drop conditions one by one → cancel the search")]]
+        : (this.view === "outline" && this.outlineFrom) || (this.view === "relations" && this.relStack.length)
+        ? [["h / q / Esc", this.t("legend.backToList", "back to the list you came from")]]
         : [["h / q / Esc", this.t("legend.backToFiles", "back to the file view")]];
     for (const [k, desc] of keys.concat(back)) {
       const row = legend.createDiv({ cls: "yazi-help-row" });
@@ -3309,16 +3574,30 @@ class YaziModal extends Modal {
         ? this.t("ui.buildingIndex", "Building the full-text index…")
         : this.view === "search" && this.searchKind === "text" && !this.inputEl.value.trim()
         ? this.t("ui.typeToSearch", "Type to search the full text (space-separated words must all match)")
+        : this.view === "outline"
+        ? this.t("ui.noHeadings", "(no headings)")
+        : this.view === "relations"
+        ? this.t("ui.noRelations", "(nothing links to or from this note)")
         : this.t("ui.noItems", "(no items)");
       this.mainEl.createDiv({ cls: "yazi-empty", text: hint });
       return;
     }
     let activeEl = null;
+    const outline = this.view === "outline";
+    let group = null;
     this.listItems.forEach((item, idx) => {
+      // 分組標題（目前只有關聯檢視會設 group）。標題本身不是清單項目 —— j/k 不會停在
+      // 上面，/ 過濾掉整組時它也跟著不見，因為它是跟著第一筆畫出來的。
+      if (item.group && item.group !== group) {
+        group = item.group;
+        this.mainEl.createDiv({ cls: "yazi-group", text: group });
+      }
       const row = this.mainEl.createDiv({ cls: "yazi-row" });
       // 搜尋／清單結果也吃 frontmatter 裝飾：找 task 的時候「哪張是 P0、哪張已完成」
-      // 跟檔名一樣重要，沒理由只有檔案檢視看得到
-      const info = item.file ? fmInfo(item.file) : null;
+      // 跟檔名一樣重要，沒理由只有檔案檢視看得到。
+      // 大綱例外：每列是同一個檔的標題，把那個檔的裝飾重複畫在每一列只是噪音。
+      const info = item.file && !outline ? fmInfo(item.file) : null;
+      if (outline) row.addClass("is-outline yazi-outline-d" + (item.depth || 0));
       if (info && info.dim) row.addClass("is-fm-dim");
       row.createSpan({ cls: "yazi-icon", text: item.active ? "●" : info ? info.icon : "·" });
       const nameEl = row.createSpan({ cls: "yazi-name", text: item.label });
@@ -3331,7 +3610,8 @@ class YaziModal extends Modal {
       }
       row.addEventListener("click", () => {
         this.listIndex = idx;
-        this.activateListItem("current");
+        if (this.view === "relations") this.revealRelation();
+        else this.activateListItem("current");
       });
     });
     if (activeEl) activeEl.scrollIntoView({ block: "nearest" });
@@ -3433,6 +3713,13 @@ class YaziModal extends Modal {
 
   renderPreview() {
     const el = this.previewEl;
+    // 大綱檢視：右欄畫的還是同一個檔就不重畫，只捲到游標所指的標題。
+    // 重畫會把捲動位置歸零、還要再等一次渲染 —— j/k 掃標題就不可能即時。
+    if (this.view === "outline" && this.outlineFile && this.previewPath === this.outlineFile.path) {
+      this.followOutline();
+      return;
+    }
+    this.previewPath = null;
     el.empty();
     this.previewToken++;
     // 上一格的渲染（已排程的、已掛上的）一律收掉：token 只擋得住「結果回來時」，
@@ -3444,6 +3731,11 @@ class YaziModal extends Modal {
     this.disposePreviewMd();
 
     if (this.view !== "files") {
+      // 大綱：右欄永遠是那個檔（沒有標題、或過濾到空也一樣要看得到內文）
+      if (this.view === "outline" && this.outlineFile) {
+        this.renderFilePreview(el, this.outlineFile);
+        return;
+      }
       const item = this.listCurrent();
       // 全文搜尋：右欄是完整內文（命中處 highlight、自動捲到第一處）
       if (item && item.content !== undefined) {
@@ -3536,6 +3828,7 @@ class YaziModal extends Modal {
   toggleRenderMd() {
     const on = !this.renderMd();
     if (this.plugin) this.plugin.setRenderPreview(on);
+    this.previewPath = null;   // 大綱檢視平常不重畫右欄，切換渲染模式是要重畫的那一次
     new Notice(on
       ? this.t("notice.previewRendered", "Preview: rendered markdown")
       : this.t("notice.previewPlain", "Preview: plain text"));
@@ -3584,6 +3877,7 @@ class YaziModal extends Modal {
       const done = () => {
         if (this.previewComp !== comp) return;   // 已經被下一次渲染換掉了
         placeholder.remove();                    // 渲染完成才拿掉純文字，中間不留空窗
+        if (this.view === "outline") this.followOutline();   // 版面換了，標題的位置也換了
       };
       if (render && typeof render.then === "function") render.then(done, done);
       else done();
@@ -3616,6 +3910,7 @@ class YaziModal extends Modal {
 
   renderFilePreview(el, file) {
     const ext = (file.extension || "").toLowerCase();
+    this.previewPath = file.path;
 
     if (IMAGE_EXT.has(ext)) {
       const img = el.createEl("img", { cls: "yazi-preview-img" });
@@ -3661,6 +3956,7 @@ class YaziModal extends Modal {
           body += "\n…";
         }
         const pre = el.createEl("pre", { cls: "yazi-preview-text", text: body });
+        if (this.view === "outline") this.followOutline();   // 純文字這一段先對位，渲染完再對一次
         /*
          * 渲染版（,p）刻意**先畫純文字、停下來才換掉**：
          *   - 不閃空白：markdown 渲染要等，中間那段時間總得顯示點什麼

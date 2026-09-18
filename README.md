@@ -79,6 +79,11 @@ Scroll the preview without moving the cursor: `J` / `K` (five lines), `^e` / `^y
 `^d` / `^u` (half a page), `^f` / `^b` or `PageDown` / `PageUp` (a page). **The mouse wheel scrolls
 the preview wherever the pointer happens to be**, so you never have to move the mouse into it.
 
+`go` opens the **outline** of the note under the cursor: its headings, indented by level. Move with
+`j` / `k` and the preview scrolls to that heading as you go — you see the section before you commit.
+`Enter` opens the note *at that heading*; `t` does the same in a new tab. It works from the file view
+and from any list (search results, bookmarks), and `h` takes you back to where you came from.
+
 ![A fuzzy file-name search, with the note under the cursor rendered in the preview pane](https://raw.githubusercontent.com/vi000246/obsidian-yazi/main/docs/images/preview.png)
 
 ### Finding things
@@ -86,7 +91,7 @@ the preview wherever the pointer happens to be**, so you never have to move the 
 | | |
 |---|---|
 | `/` | filter the folder you are in |
-| `gf` | fuzzy search file names, whole vault |
+| `gf` | fuzzy search file names and frontmatter `aliases`, whole vault |
 | `gd` | fuzzy search folder names |
 | `gt` | full-text search, with the matching lines shown in the preview |
 
@@ -100,6 +105,38 @@ Searches always have a scope, shown as a chip. `^f` changes it, offering candida
 narrowest: whole vault → each folder above → where you started → each folder below.
 
 ![The search card: conditions come from a menu, and the result count updates before you commit](https://raw.githubusercontent.com/vi000246/obsidian-yazi/main/docs/images/search.png)
+
+### Following links
+
+`gr` shows the **relations** of the note under the cursor, grouped:
+
+```
+PARENT      Roadmap 2026
+CHILDREN    Ship the importer
+            Write the migration guide
+RELATED     Prior art — other explorers
+BACKLINKS   Weekly notes 2026-W12
+```
+
+`Parent` and `Related` are read from frontmatter; **the reverse direction is derived, never stored**
+— `Children` is "every note whose `parent` points here", so the two sides can never disagree. Plain
+`[[links]]` that carry no relation type are listed last, and anything already shown under a typed
+group is not repeated there.
+
+`Enter` or `l` **moves the cursor to that note and keeps you in the explorer**, so `gr` again walks
+one more step out and `h` steps back — following links feels the same as walking folders with
+`h`/`l`. `o` and `t` open the note for real.
+
+Which fields count as relations is configurable; out of the box:
+
+| field | group | reverse group |
+|---|---|---|
+| `parent` | Parent | Children |
+| `up` | Up | Down | 
+| `related` | Related | *(symmetric — shown on both notes)* |
+
+`up` is the [LYT](https://notes.linkingyourthinking.com/) convention: it points at the map-of-content
+note this one belongs under. If you don't use it, the group simply never appears.
 
 ### Working with files
 
@@ -270,7 +307,7 @@ doing nothing.
 
 | | |
 |---|---|
-| **Move** | `j` `k` `h` `l` `g`(`gg` `gt` `gf` `gd` `gb`) `G` `d` `u` |
+| **Move** | `j` `k` `h` `l` `g`(`gg` `gt` `gf` `gd` `go` `gr` `gb`) `G` `d` `u` |
 | **Open** | `o` `t` `s` `i` `O`(then an opener key) |
 | **Lists** | `T` `b` `z` `r`(`rf`) |
 | **Bookmarks** | `m` `M` `'` |

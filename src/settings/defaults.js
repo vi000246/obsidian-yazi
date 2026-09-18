@@ -194,6 +194,24 @@ const EXAMPLE_DECORATIONS = [
 ];
 
 /** 搜尋條件（gt / gf 的組合卡）。預設只給每個 vault 都有的那幾個。 */
+/*
+ * 關聯（gr）要讀哪些 frontmatter 欄位。
+ *
+ * 只列**正向**的欄位：反向那一組（Children / Down）是掃出來的，不是另一個欄位 ——
+ * 兩邊都存一定會漂掉（見 core/relations.js）。
+ *
+ * 這三個是社群裡最通用的：
+ *   parent   任務／筆記的上一層（Obsidian Tasks、專案管理那類用法）
+ *   up       這則筆記歸在哪個主題底下（LYT / MOC 那派的慣例，指向索引頁）
+ *   related  對稱的「有關」，兩邊都看得到
+ * 用不到的把 enabled 關掉即可；欄位名不合自己的習慣就直接改 field。
+ */
+const DEFAULT_RELATIONS = [
+  { id: "parent", enabled: true, field: "parent", label: "Parent", inverse: "Children" },
+  { id: "up", enabled: true, field: "up", label: "Up", inverse: "Down" },
+  { id: "related", enabled: true, field: "related", label: "Related", symmetric: true },
+];
+
 const DEFAULT_FACETS = [
   { id: "scope", key: "f", icon: "📁", label: "Folder", kind: "path", enabled: true },
   { id: "tag", key: "t", icon: "🏷", label: "Tag", kind: "tag", enabled: true },
@@ -216,6 +234,7 @@ const DEFAULT_SETTINGS = {
   openers: DEFAULT_OPENERS,
   decorations: DEFAULT_DECORATIONS,
   facets: DEFAULT_FACETS,
+  relations: DEFAULT_RELATIONS,
 
   preview: {
     /* markdown 渲染成閱讀檢視的樣子。關掉就是純文字。 */
@@ -271,6 +290,7 @@ module.exports = {
   DEFAULT_DECORATIONS,
   EXAMPLE_DECORATIONS,
   DEFAULT_FACETS,
+  DEFAULT_RELATIONS,
   DEFAULT_SETTINGS,
   defaultSettings,
 };
