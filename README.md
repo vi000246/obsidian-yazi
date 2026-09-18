@@ -8,7 +8,7 @@ If you navigate your vault from the sidebar file tree with a mouse, this is the 
 three-column browser that opens on the file you are already editing, and that you never have to take
 your hands off the keyboard to use.
 
-![Miller columns: the parent folder, the folder you are in, and what is inside the item under the cursor](docs/images/overview.png)
+![Miller columns: the parent folder, the folder you are in, and what is inside the item under the cursor](https://raw.githubusercontent.com/vi000246/obsidian-yazi/main/docs/images/overview.png)
 
 > **Status:** early. In daily use in a 5000-note vault, but the settings schema may still change
 > before 1.0.
@@ -79,7 +79,7 @@ Scroll the preview without moving the cursor: `J` / `K` (five lines), `^e` / `^y
 `^d` / `^u` (half a page), `^f` / `^b` or `PageDown` / `PageUp` (a page). **The mouse wheel scrolls
 the preview wherever the pointer happens to be**, so you never have to move the mouse into it.
 
-![A fuzzy file-name search, with the note under the cursor rendered in the preview pane](docs/images/preview.png)
+![A fuzzy file-name search, with the note under the cursor rendered in the preview pane](https://raw.githubusercontent.com/vi000246/obsidian-yazi/main/docs/images/preview.png)
 
 ### Finding things
 
@@ -99,7 +99,7 @@ actually exist, and a typo shows up as “only 1 note has this”.
 Searches always have a scope, shown as a chip. `^f` changes it, offering candidates from widest to
 narrowest: whole vault → each folder above → where you started → each folder below.
 
-![The search card: conditions come from a menu, and the result count updates before you commit](docs/images/search.png)
+![The search card: conditions come from a menu, and the result count updates before you commit](https://raw.githubusercontent.com/vi000246/obsidian-yazi/main/docs/images/search.png)
 
 ### Working with files
 
@@ -205,7 +205,7 @@ conditions and the preview-panel field order live in the **Advanced (JSON)** box
 they are nested data, and a form for them would be thirty input boxes.
 </details>
 
-![Row decoration examples: each one shows the row it produces before you add it](docs/images/settings.png)
+![Row decoration examples: each one shows the row it produces before you add it](https://raw.githubusercontent.com/vi000246/obsidian-yazi/main/docs/images/settings.png)
 
 The settings tab ships a gallery of examples — each one **shows the row it produces** before you add
 it. The first few match on *“this field has a value”* rather than on a particular word, so they work
