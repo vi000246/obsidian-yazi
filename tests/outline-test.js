@@ -82,7 +82,7 @@ eq("標題變成清單項目（標籤／層級／行號）", s.listItems.map((i)
 eq("把來的那一層推進堆疊", s.layers.map((l) => l.view), ["search"]);
 eq("清單內過濾在大綱裡是乾淨的", s.listFilter, "");
 s.buildSearchList = function () { this.listItems = before; };
-s.backToFiles();
+s.goBackLayer();
 eq("h 退回搜尋結果，不是檔案檢視", s.view, "search");
 eq("原來的項目與過濾字都還在", [s.listItems === before, s.listFilter], [true, "kept"]);
 eq("退回去之後堆疊空了", s.layers.length, 0);
@@ -97,7 +97,7 @@ eq("有全域排序時大綱仍照文章順序", sorted.listItems.map((i) => i.l
 const f = Object.assign(base("files"), { app, current: () => mdFile, sortCfg: () => ({ field: "natural" }) });
 f.openOutline();
 eq("檔案檢視進來，推的是檔案檢視那一層", [f.view, f.layers.map((l) => l.view)], ["outline", ["files"]]);
-f.backToFiles();
+f.goBackLayer();
 eq("h 回檔案檢視", f.view, "files");
 
 /* 不是 md 就不進去 */

@@ -37,7 +37,7 @@ const app = {
 };
 const mk = (view, over) => Object.assign(Object.create(YaziModal.prototype), {
   view, mode: "nav", pending: null, showHelp: false, visual: 0, listItems: [], listIndex: 0,
-  listFilter: "", relFile: null, layers: [], composing: false,
+  listFilter: "", relFile: null, layers: [], composing: false, relExpanded: new Set(), relCache: null,
   app, plugin: { settings: { relations: DEFAULT_RELATIONS } },
   sortCfg: () => ({ field: "natural", reverse: false, foldersFirst: true }),
   swallow() {}, render() {}, scope: { keys: [] },
@@ -82,10 +82,10 @@ eq("再按 gr：中心換成 d，a 那層進堆疊",
    [walk.relFile.path, walk.layers.map((l) => l.view + ":" + (l.relFile ? l.relFile.path : "-"))],
    ["d.md", ["files:-", "relations:a.md"]]);
 eq("d 的關聯：Parent a", walk.listItems.map((i) => [i.group, i.label]), [["Parent", "a"]]);
-walk.backToFiles();
+walk.goBackLayer();
 eq("h 退一步：回到 a，還在關聯檢視",
    [walk.view, walk.relFile.path, walk.layers.length], ["relations", "a.md", 1]);
-walk.backToFiles();
+walk.goBackLayer();
 eq("再按 h：退回檔案檢視", walk.view, "files");
 
 /* 切到別的清單：那也是一層，堆疊變深 */
@@ -105,10 +105,32 @@ const j = mk("relations", {
   buildList() {}, clearSelection: () => false,
 });
 j.handleKey(ev("Enter"));
-eq("Enter：跳游標、不開檔", acts, ["reveal:b.md"]);
-// 跳進 vault 也是一層：Esc 要退得回這份關聯清單
-eq("跳過去之後在檔案檢視，關聯那層留在堆疊裡",
-   [j.view, j.layers.map((l) => l.view)], ["files", ["relations"]]);
+eq("Enter ＝進去：中心換成 b、不開檔、不跳游標", [acts, j.view, j.relFile.path], [[], "relations", "b.md"]);
+eq("原本那層（中心 a）推進堆疊，h 退得回去",
+   j.layers.map((l) => l.view + ":" + (l.relFile ? l.relFile.path : "-")), ["relations:a.md"]);
+
+/* ── 4b. 一般連結預設收合成一列，l 展開；展開狀態跟著中心走 ── */
+const e = F("e.md");
+const app2 = Object.assign({}, app, {
+  vault: { getMarkdownFiles: () => ALL.concat([e]), getAbstractFileByPath: (p) => (p === "e.md" ? e : app.vault.getAbstractFileByPath(p)) },
+  metadataCache: Object.assign({}, app.metadataCache, { resolvedLinks: { "a.md": { "e.md": 1 } } }),
+});
+const c2 = mk("files", { current: () => a, app: app2 });
+c2.openRelations();
+const last = c2.listItems[c2.listItems.length - 1];
+eq("Links 收合成一列：▸ 圖示、帶筆數、沒有分組標題", [last.icon, last.label, last.collapsed, last.group], ["▸", "1 Links", "Links", undefined]);
+eq("有型別的三組照常攤開", c2.listItems.slice(0, 3).map((i) => i.group), ["Parent", "Children", "Related"]);
+c2.listIndex = c2.listItems.length - 1;
+c2.enterRelation();
+eq("l 展開：e 出現在 Links 組底下、堆疊沒動（展開不是進去）",
+   [c2.listItems.filter((i) => i.group === "Links").map((i) => i.label), c2.layers.length], [["e"], 1]);
+c2.listIndex = 1;   // Children → d
+c2.enterRelation();
+eq("走到 d：那邊的 Links（若有）是收合的、a 的展開狀態留著",
+   [c2.relFile.path, c2.relExpanded.has("a.md\nLinks")], ["d.md", true]);
+
+/* 分組有快取：同一個檔第二次拿到同一份 */
+eq("relationGroupsFor 一次開啟期間每個檔只算一次", c2.relationGroupsFor(a) === c2.relationGroupsFor(a), true);
 
 acts.length = 0;
 const o = mk("relations", { listItems: [{ path: "b.md", file: b }], listIndex: 0, relFile: a,

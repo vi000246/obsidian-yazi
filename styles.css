@@ -121,6 +121,41 @@
   opacity: 0.8;
 }
 
+/* 關聯（gr）右欄最上面的摘要條：游標所指那則筆記有哪幾組關聯、各幾筆。
+   一般連結那兩組淡一點，因為它們不是人親手標的關係。 */
+.yazi-rel-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: 0.8em;
+}
+
+.yazi-rel-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--background-modifier-hover);
+}
+
+.yazi-rel-chip.is-untyped {
+  opacity: 0.6;
+}
+
+.yazi-rel-chip-n {
+  font-weight: 600;
+  color: var(--text-accent);
+}
+
+.yazi-rel-none {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
 /* 關聯（gr）的分組標題。不是清單項目 —— 游標不會停在上面 */
 .yazi-group {
   padding: 8px 10px 2px;

@@ -510,6 +510,8 @@ class YaziModal extends Modal {
     this.outlineFile = null; // 大綱檢視（go）在看哪個檔
     this.opening = false;    // 開場的初始檢視期間為 true，那期間不推層（見 pushLayer）
     this.relFile = null;     // 關聯檢視（gr）以哪個檔為中心
+    this.relExpanded = new Set(); // 哪些「一般連結」組被展開了（key ＝ 中心路徑 + 組名）
+    this.relCache = null;    // 每個檔的關聯分組，一次開啟期間各算一次（見 relationGroupsFor）
     /*
      * 層堆疊。Esc／q／h 是「退回上一層」，而「上一層」有很多種：從檔案檢視按 b 進書籤、
      * 從書籤跳進某個資料夾、從檢視清單執行一個搜尋、從搜尋結果按 go 看大綱、
@@ -724,12 +726,6 @@ class YaziModal extends Modal {
       this.app.vault.on(evt, () => this.render())
     );
 
-    /*
-     * 進來時停在哪一層。Esc 是「關掉最上面那一層」，所以要知道**最底下**是哪一層：
-     * 從檔案檢視走進書籤，底層是檔案檢視，Esc 退回去；用 ,b 直接開書籤，書籤本身
-     * 就是底層，Esc 沒有「下面那層」可退，該關掉整個視窗（見 isEntryLayer）。
-     * 三種搜尋在 view 上都是 "search"，這裡先收斂成同一個名字。
-     */
     /*
      * 開場停的那一層是**最底層**：用 ,b / ,gv 直接開進書籤或檢視清單時，下面沒有
      * 東西可退，Esc 就該關掉整個視窗。所以這段期間不推層（見 pushLayer）。
@@ -1635,10 +1631,14 @@ class YaziModal extends Modal {
     this.render();
   }
 
-  // h：往回一層；已經在最底層就單純切到檔案檢視（不關視窗）
-  backToFiles() {
+  /*
+   * h：退回上一個地方。已經是最底層就**留在原地** —— 用 ,b / ,gv 直接開進清單的人
+   * 從沒去過檔案檢視，h 憑空變出一個給他等於把他丟到沒要求過的地方。
+   * h 是空間導航（往左），不是關窗；要關是 Esc / q 的事。
+   */
+  goBackLayer() {
     if (this.popLayer()) return;
-    this.toFilesView();
+    new Notice(this.t("notice.atFirstLayer", "Already at the first layer — Esc or q closes"));
   }
 
   /*
@@ -1745,11 +1745,6 @@ class YaziModal extends Modal {
   leaveSubView() {
     if (this.popLayer()) return;
     this.forceClose();
-  }
-
-  /* 現在這一層就是最底層嗎（Esc 再按下去就是關視窗）？只給圖例用。 */
-  isEntryLayer() {
-    return this.layers.length === 0 && this.view !== "files";
   }
 
   /*
@@ -2105,6 +2100,36 @@ class YaziModal extends Modal {
   collectRelationItems() {
     const file = this.relFile;
     if (!file) return [];
+    const out = [];
+    for (const g of this.relationGroupsFor(file)) {
+      /*
+       * 一般連結（Links / Backlinks）預設收合成一列：它們常有幾十筆，攤開會把
+       * parent / related 淹掉。畫成資料夾那樣的 ▸，l / Enter 展開 —— 跟其他節點的
+       * 「進去」是同一顆鍵，不必另外記。展開狀態跟著「哪個中心的哪一組」走，
+       * 走到下一則筆記又是收合的，退回來則維持展開。
+       */
+      if (g.untyped && !this.relExpanded.has(file.path + "\n" + g.label)) {
+        out.push({
+          icon: "▸",
+          label: this.t("ui.relCollapsed", "{n} {label}", { n: g.items.length, label: g.label }),
+          sub: "", collapsed: g.label, path: null, file: null,
+        });
+        continue;
+      }
+      for (const f of g.items) out.push({ label: f.basename, sub: f.path, path: f.path, file: f, group: g.label });
+    }
+    return out;
+  }
+
+  /*
+   * 一則筆記的關聯分組（含推導出來的反向）。
+   * 一次開啟期間每個檔只算一次：右欄的摘要條在每次 j/k 都要問一次游標所指那則的分組，
+   * 而反向推導要掃整個 vault 的 frontmatter，不快取的話長按 j 會卡。
+   */
+  relationGroupsFor(file) {
+    if (!file) return [];
+    if (!this.relCache) this.relCache = new Map();
+    if (this.relCache.has(file.path)) return this.relCache.get(file.path);
     const app = this.app;
     const mc = app.metadataCache;
     const rules = (this.plugin && this.plugin.settings && this.plugin.settings.relations) || [];
@@ -2146,13 +2171,8 @@ class YaziModal extends Modal {
       },
     });
 
-    const out = [];
-    for (const g of groups) {
-      for (const f of g.items) {
-        out.push({ label: f.basename, sub: f.path, path: f.path, file: f, group: g.label });
-      }
-    }
-    return out;
+    this.relCache.set(file.path, groups);
+    return groups;
   }
 
   /* ── 儲存的檢視（gv / ,v）──
@@ -2383,13 +2403,26 @@ class YaziModal extends Modal {
     this.openFile(f, openMode || "current");
   }
 
-  // 關聯檢視的 Enter / l：游標跳到那個檔並回到檔案檢視（Esc 退得回這份關聯清單）
-  revealRelation() {
+  /*
+   * 關聯檢視的 Enter / l ＝「進去」：把關聯當資料夾走。
+   * 游標所指那則筆記變成新的中心，中欄換成它的關聯，左欄變成剛才那份（上一跳），
+   * h 退回去 —— 跟 h/l 走資料夾一模一樣。收合的一組（▸ 12 Backlinks）按 l 是展開，
+   * 同一顆鍵、同一個意思：進到裡面看。真的要開檔是 o / t。
+   */
+  enterRelation() {
     const item = this.listCurrent();
     if (!item) return;
+    if (item.collapsed) {
+      this.relExpanded.add(this.relFile.path + "\n" + item.collapsed);
+      this.buildList();
+      this.render();
+      return;
+    }
+    if (!item.file) return;
     this.pushLayer();
-    this.revealPath(item.path);
-    this.toFilesView();
+    this.relFile = item.file;
+    this.listFilter = "";
+    this.openList("relations", { skipPush: true });
   }
 
   // 清單裡按 x
@@ -3324,7 +3357,7 @@ class YaziModal extends Modal {
         // 關聯檢視的 Enter / l 是「游標跳過去，人留在 yazi」（見 openRelations）；
         // o 在哪裡都是「在 Obsidian 開啟」，所以這裡兩者要分開
         case "l": case "Enter":
-          if (this.view === "relations") this.revealRelation();
+          if (this.view === "relations") this.enterRelation();
           else if (this.view === "views") this.runView((this.listCurrent() || {}).viewDef);
           else this.activateListItem("current");
           break;
@@ -3381,10 +3414,10 @@ class YaziModal extends Modal {
         case ",": this.pending = ","; this.render(); break;
         case "r": this.pending = "r"; this.render(); break;
         case "?": this.showHelp = !this.showHelp; this.render(); break;
-        // h ＝往左／退回（導航）；q 跟 Esc 一樣是「關掉這一層」，
-        // 所以用命令直接開進來的那一層，q 也會關掉整個視窗
-        case "h": this.backToFiles(); break;
-        case "q": this.leaveSubView(); break;
+        // h ＝退回上一個地方（最底層就不動）；q ＝一律關掉視窗（yazi 的 quit）；
+        // Esc 走 escapeBack 的階梯（先收狀態、再退地方、最後關窗）
+        case "h": this.goBackLayer(); break;
+        case "q": this.forceClose(); break;
         case "Escape": this.escapeBack(); break;
         default:
           // 書籤／檢視清單裡直接按該筆的字母也能開
@@ -3464,7 +3497,9 @@ class YaziModal extends Modal {
         this.inputEl.focus();
         this.render();
         break;
-      case "q":                    this.swallow(ev); this.close(); break;
+      // q ＝一律關窗。走 forceClose 而不是 close()：close() 會被攔去退層（見 close 的註解），
+      // 從書籤跳進某個資料夾之後按 q 會變成「退回書籤」而不是關掉
+      case "q":                    this.swallow(ev); this.forceClose(); break;
       case "Escape":                this.swallow(ev); this.escapeBack(); break;
       default:
         // 沒對應動作的可見字元也一律吃掉。不吃的話會漏回 document，例如 ',' 會被
@@ -3909,6 +3944,12 @@ class YaziModal extends Modal {
       this.renderListMain();
       return;
     }
+    // 關聯檢視：左欄是「上一跳」—— 跟檔案檢視的父層資料夾欄同一個意思（我從哪來）。
+    // 沒有上一跳（用命令直接開進來）才放圖例。
+    if (this.view === "relations" && this.renderPrevHop(this.parentEl)) {
+      this.renderListMain();
+      return;
+    }
     const legend = this.parentEl.createDiv({ cls: "yazi-help" });
     legend.createDiv({ cls: "yazi-help-title", text: title });
     const keys =
@@ -3956,8 +3997,7 @@ class YaziModal extends Modal {
           ]
         : this.view === "relations"
         ? [
-            ["Enter / l", this.t("legend.relJump", "move the cursor there and stay in the explorer")],
-            ["gr", this.t("legend.relWalk", "relations of that note (h steps back)")],
+            ["Enter / l", this.t("legend.relEnter", "enter: its relations become the list (h steps back)")],
             ["o / t", this.t("legend.relOpen", "open it / in a new tab")],
             ["/", this.t("legend.refineShort", "filter within the results")],
           ]
@@ -3969,22 +4009,73 @@ class YaziModal extends Modal {
             ["/", this.t("legend.outlineFilter", "filter the headings")],
           ]
         : [["Enter / l / o", this.t("legend.open", "open")], ["t", this.t("legend.newTab", "open in a new tab")]];
+    /*
+     * 退出那幾列照「地方 vs 狀態」兩個軸寫：h 退地方、Esc 先收狀態再退地方最後關窗、
+     * q 一律關窗。最底層時 h 沒地方去，就不列它。
+     */
     const back =
       this.view === "search"
-        ? [["Esc", this.t("legend.escLayers", "drop the suggestion → drop conditions one by one → cancel the search")]]
+        ? [["Esc", this.t("legend.escLayers", "back to the search card (conditions kept); Esc again leaves. Backspace drops a condition")],
+           ["h", this.t("legend.backLayer", "back to where you came from")],
+           ["q", this.t("legend.closeExplorer", "close the explorer")]]
         : this.layers.length
-        ? [["h / q / Esc", this.t("legend.backToList", "back to the list you came from")]]
-        // 直接開進這一層的：Esc 沒有「下面那層」可退，就是關掉整個視窗
-        : this.isEntryLayer()
-        ? [["q / Esc", this.t("legend.closeExplorer", "close the explorer")],
-           ["h", this.t("legend.backToFiles", "back to the file view")]]
-        : [["h / q / Esc", this.t("legend.backToFiles", "back to the file view")]];
+        ? [["h / Esc", this.t("legend.backLayer", "back to where you came from")],
+           ["q", this.t("legend.closeExplorer", "close the explorer")]]
+        : [["Esc / q", this.t("legend.closeExplorer", "close the explorer")]];
     for (const [k, desc] of keys.concat(back)) {
       const row = legend.createDiv({ cls: "yazi-help-row" });
       row.createSpan({ cls: "yazi-help-key", text: k });
       row.createSpan({ cls: "yazi-help-desc", text: desc });
     }
     this.renderListMain();
+  }
+
+  /*
+   * 關聯檢視的左欄：上一跳。畫法照父層資料夾欄 —— 淡的一列列，目前的中心反白，
+   * 讓人一眼看出「我是從哪一筆走進來的」。
+   * 上一跳可能是檔案檢視（第一次 gr）或另一份關聯清單（走了不只一步）；
+   * 其他種類的清單（書籤、搜尋結果）就照它們的項目畫。回傳 false ＝沒有上一跳。
+   */
+  renderPrevHop(el) {
+    const prev = this.layers[this.layers.length - 1];
+    if (!prev) return false;
+    el.empty();
+    const here = this.relFile ? this.relFile.path : null;
+    if (prev.view === "files" && prev.cwd) {
+      this.renderColumn(el, this.entries(prev.cwd), here, false);
+      return true;
+    }
+    if (!Array.isArray(prev.listItems)) return false;
+    let group = null;
+    prev.listItems.forEach((it, idx) => {
+      if (it.group && it.group !== group) {
+        group = it.group;
+        el.createDiv({ cls: "yazi-group", text: group });
+      }
+      const active = (it.path && it.path === here) || (!here && idx === prev.listIndex);
+      const row = el.createDiv({ cls: "yazi-row is-preview" + (active ? " is-cursor" : "") });
+      row.createSpan({ cls: "yazi-icon", text: it.icon || "·" });
+      row.createSpan({ cls: "yazi-name", text: it.label });
+    });
+    return true;
+  }
+
+  /*
+   * 右欄最上面那一條：游標所指那則筆記有哪幾組關聯、各幾筆。
+   * 它回答的是「按 l 進去有沒有路」—— 沒有這條的話，要進去才知道是空的。
+   */
+  renderRelStrip(el, file) {
+    const groups = this.relationGroupsFor(file);
+    const strip = el.createDiv({ cls: "yazi-rel-strip" });
+    if (!groups.length) {
+      strip.createSpan({ cls: "yazi-rel-none", text: this.t("ui.relNone", "no relations — l leads nowhere") });
+      return;
+    }
+    for (const g of groups) {
+      const chip = strip.createSpan({ cls: "yazi-rel-chip" + (g.untyped ? " is-untyped" : "") });
+      chip.createSpan({ cls: "yazi-rel-chip-label", text: g.label });
+      chip.createSpan({ cls: "yazi-rel-chip-n", text: String(g.items.length) });
+    }
   }
 
   // 清單檢視的中欄（從 renderList 拆出來，因為左欄有兩種畫法但中欄只有一種）
@@ -4031,6 +4122,7 @@ class YaziModal extends Modal {
         row.addClass("is-outline");
         row.addClass("yazi-outline-d" + (item.depth || 0));
       }
+      if (item.collapsed) row.addClass("is-folder");   // 收合的一組：畫成資料夾，l 進去＝展開
       if (info && info.dim) row.addClass("is-fm-dim");
       /*
        * 檢視與書籤是兩行的：名稱一行、說明（搜尋條件／路徑）一行。
@@ -4049,7 +4141,7 @@ class YaziModal extends Modal {
       }
       row.addEventListener("click", () => {
         this.listIndex = idx;
-        if (this.view === "relations") this.revealRelation();
+        if (this.view === "relations") this.enterRelation();
         else if (this.view === "views") this.runView(item.viewDef);
         else this.activateListItem("current");
       });
@@ -4224,6 +4316,18 @@ class YaziModal extends Modal {
       if (this.view === "outline" && this.outlineFile) {
         this.renderFilePreview(el, this.outlineFile);
         return;
+      }
+      // 關聯：預覽 ＋ 最上面一條關聯摘要（按 l 有沒有路可走，看這條就知道）
+      if (this.view === "relations") {
+        const it = this.listCurrent();
+        if (it && it.collapsed) {
+          el.createDiv({ cls: "yazi-empty", text: this.t("ui.relCollapsedHint", "l or Enter expands this group") });
+          return;
+        }
+        if (it && it.file) {
+          this.renderFilePreview(el, it.file, { header: (box) => this.renderRelStrip(box, it.file) });
+          return;
+        }
       }
       const item = this.listCurrent();
       // 全文搜尋：右欄是完整內文（命中處 highlight、自動捲到第一處）
@@ -4420,9 +4524,15 @@ class YaziModal extends Modal {
     }
   }
 
-  renderFilePreview(el, file) {
+  /*
+   * opts.header(el)：要畫在預覽最上面的東西（關聯檢視的摘要條）。
+   * 純文字那條路會在讀完檔之後 el.empty()，所以 header 在那之後要再叫一次。
+   */
+  renderFilePreview(el, file, opts) {
     const ext = (file.extension || "").toLowerCase();
     this.previewPath = file.path;
+    const header = opts && typeof opts.header === "function" ? opts.header : null;
+    if (header) header(el);
 
     if (IMAGE_EXT.has(ext)) {
       const img = el.createEl("img", { cls: "yazi-preview-img" });
@@ -4440,6 +4550,7 @@ class YaziModal extends Modal {
       (text) => {
         if (token !== this.previewToken) return;
         el.empty();
+        if (header) header(el);
         /*
          * 認得的 frontmatter → 上面畫成表格，並把原始的 YAML 區塊從內文裡切掉。
          * 切掉是重點之一：task 的 frontmatter 有 11 行，不切的話預覽的前 11 行
@@ -4691,6 +4802,8 @@ class YaziModal extends Modal {
     if (this.filter) bits.push(this.t("ui.filterShort", "filter:") + this.filter);
     if (this.listFilter) bits.push(this.t("ui.inResults", "in results:") + this.listFilter);
     if (this.searchQuery && this.view === "search") bits.push(this.t("ui.query", "query:") + this.searchQuery);
+    // 關聯檢視的左欄是上一跳（不是圖例），這三顆鍵就放狀態列常駐
+    if (this.view === "relations") bits.push(this.t("ui.relHint", "l enter · o open · h back"));
     this.hintEl.setText(bits.join("　") + "　" + this.t("ui.help", "? help"));
   }
 }

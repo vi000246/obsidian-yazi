@@ -116,14 +116,24 @@ const sug = mk({ view: "search", sug: { items: [] } });
 eq("建議列開著時先收建議", esc(sug), []);
 eq("只收掉建議", [sug.sug, sug.view], [null, "search"]);
 
-/* ── 6. q 與 Esc 同語意；h 是導航 ── */
+/*
+ * ── 6. 三顆鍵三種語意 ──
+ *   h    退回上一個地方；最底層就留在原地（絕不憑空變出檔案檢視）
+ *   Esc  先收狀態、再退地方、最底層才關窗（上面各組測的就是這個）
+ *   q    一律關窗
+ */
 const ev = (key) => ({ key, type: "keydown", preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} });
 const key = (m, k) => { acts.length = 0; m.handleKey(ev(k)); return acts.slice(); };
-eq("堆疊空的那層按 q ＝關視窗", key(mk({ view: "bookmarks", plugin: null }), "q"), ["close"]);
-eq("堆疊空的那層按 h ＝切到檔案檢視（不關）", key(mk({ view: "bookmarks", plugin: null }), "h"), []);
+const bottom = () => mk({ view: "bookmarks", plugin: null });
 const hasLayer = () => mk({ view: "bookmarks", plugin: null, layers: [{ view: "files", listItems: [] }] });
-eq("有上一層時 q 退回去", key(hasLayer(), "q"), []);
-eq("有上一層時 h 也退回去", key(hasLayer(), "h"), []);
+
+const hb = bottom();
+eq("最底層按 h：不動、不關、不跳檔案檢視", [key(hb, "h"), hb.view], [[], "bookmarks"]);
+const hl = hasLayer();
+eq("有上一層時 h 退回去", [key(hl, "h"), hl.view, hl.layers.length], [[], "files", 0]);
+
+eq("最底層按 q ＝關視窗", key(bottom(), "q"), ["close"]);
+eq("有上一層時 q 也直接關（q 是 quit，不是退層）", key(hasLayer(), "q"), ["close"]);
 
 /* ── 7. 開場的初始檢視不算一層 ── */
 const opening = mk({ opening: true });

@@ -115,17 +115,21 @@ PARENT      Roadmap 2026
 CHILDREN    Ship the importer
             Write the migration guide
 RELATED     Prior art — other explorers
-BACKLINKS   Weekly notes 2026-W12
+▸ 12 Backlinks
+▸ 3 Links
 ```
 
 `Parent` and `Related` are read from frontmatter; **the reverse direction is derived, never stored**
 — `Children` is "every note whose `parent` points here", so the two sides can never disagree. Plain
-`[[links]]` that carry no relation type are listed last, and anything already shown under a typed
-group is not repeated there.
+`[[links]]` that carry no relation type come last, **folded into one line each** so they cannot bury
+the typed groups; anything already shown under a typed group is not repeated there.
 
-`Enter` or `l` **moves the cursor to that note and keeps you in the explorer**, so `gr` again walks
-one more step out and `h` steps back — following links feels the same as walking folders with
-`h`/`l`. `o` and `t` open the note for real.
+**Relations are walked exactly like folders.** `l` or `Enter` on a note *enters* it: its relations
+become the list, the left column becomes the list you just left (the way the parent folder does),
+and `h` steps back. `l` on a folded `▸ 12 Backlinks` line expands it — same key, same idea. The
+preview on the right shows the note under the cursor with a strip on top saying which groups it has
+and how many, so you know before pressing `l` whether it leads anywhere. `o` and `t` open the note
+for real.
 
 Which fields count as relations is configurable; out of the box:
 
@@ -194,9 +198,16 @@ plugin, where these work well as `,`-sequences:
 | Open tab list · bookmarks · recent files · most visited | those lists |
 | Search: full text · file names · folders | straight into that search |
 
-`Esc` closes the topmost layer. If you walked into a list from the file view, it takes you back
-there; if a command opened you **straight into** that list, there is no layer underneath, so `Esc`
-closes the explorer. `q` does the same, `h` always goes back to the file view.
+Three keys leave things, and they mean three different things:
+
+| | |
+|---|---|
+| `h` | back to **where you came from** — the list or folder you were in before. At the first layer it stays put. |
+| `Esc` | dismiss the innermost thing first (a suggestion, an input, the help page, a search card…); with nothing left, back one layer; at the first layer, **close** |
+| `q` | close the explorer, from anywhere |
+
+So if a command opened you straight into a list, that list *is* the first layer: `Esc` closes,
+`h` has nowhere to go. If you walked into it from the file view, both take you back there.
 
 ### Finding a key
 

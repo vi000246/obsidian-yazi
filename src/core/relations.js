@@ -68,7 +68,8 @@ function parseLinks(value) {
 function collectRelations(file, rules, ctx) {
   const groups = [];
   const typed = new Set();          // 已經有型別的，就不要再出現在「一般連結」裡
-  const push = (label, files) => {
+  // untyped ＝一般連結那兩組（沒有型別）。呼叫端靠這個旗標決定要不要預設收合。
+  const push = (label, files, untyped) => {
     const seen = new Set();
     const items = [];
     for (const f of files) {
@@ -77,7 +78,7 @@ function collectRelations(file, rules, ctx) {
       typed.add(f.path);
       items.push(f);
     }
-    if (items.length) groups.push({ label, items });
+    if (items.length) groups.push({ label, items, untyped: !!untyped });
   };
 
   const fm = ctx.fmOf(file) || {};
@@ -109,8 +110,8 @@ function collectRelations(file, rules, ctx) {
 
   // 一般連結擺最後：有型別的已經被挑走，剩下的是內文連結
   const labels = ctx.labels || {};
-  if (labels.backlinks) push(labels.backlinks, ctx.linksTo(file).filter((f) => !typed.has(f.path)));
-  if (labels.links) push(labels.links, ctx.linksFrom(file).filter((f) => !typed.has(f.path)));
+  if (labels.backlinks) push(labels.backlinks, ctx.linksTo(file).filter((f) => !typed.has(f.path)), true);
+  if (labels.links) push(labels.links, ctx.linksFrom(file).filter((f) => !typed.has(f.path)), true);
 
   return groups;
 }
