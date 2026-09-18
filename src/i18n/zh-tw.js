@@ -434,7 +434,7 @@ module.exports = {
   "legend.refineShort": "在結果裡再過濾",
   "legend.frecencyCount": "累計造訪次數；排名＝次數 × 時間衰減（所以久沒去的會慢慢往下掉）",
   "legend.open": "開啟",
-  "legend.escLayers": "收建議 → 拿掉條件（一顆一顆）→ 取消搜尋",
+  "legend.escLayers": "退回組合卡（條件留著）；再按一次才離開搜尋。條件用 Backspace 拿掉",
   "legend.backToFiles": "回檔案檢視",
   "legend.closeExplorer": "關閉視窗",
   "legend.backToList": "回到剛才那份清單",

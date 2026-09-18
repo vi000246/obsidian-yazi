@@ -450,7 +450,7 @@ module.exports = {
   "legend.refineShort": "filter within the results",
   "legend.frecencyCount": "times visited; ranking is count × time decay, so what you stop visiting sinks",
   "legend.open": "open",
-  "legend.escLayers": "drop the suggestion → drop conditions one by one → cancel the search",
+  "legend.escLayers": "back to the search card (conditions kept); Esc again leaves. Backspace drops a condition",
   "legend.backToFiles": "back to the file view",
   "legend.closeExplorer": "close the explorer",
   "legend.backToList": "back to the list you came from",

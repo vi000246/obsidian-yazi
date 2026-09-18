@@ -1658,12 +1658,18 @@ class YaziModal extends Modal {
       this.render();
       return;
     }
-    // 條件比關鍵字更「外層」：先讓人一顆一顆退掉條件，再退出搜尋
-    if (this.view === "search" && this.facets.length) {
-      this.facets.pop();
-      this.listIndex = 0;
-      this.buildSearchList();
-      this.render();
+    /*
+     * 搜尋結果 → 退回組合卡（條件原封留著，可以看、可以改）。
+     *
+     * 組合卡與結果是同一個 view 的兩個階段，不是兩層，所以層堆疊管不到這一步。
+     * 而「看到結果，想再收窄一點」是搜尋最常見的下一步 —— Esc 直接離開整個搜尋，
+     * 等於把剛組好的條件丟掉。資料夾搜尋沒有組合卡（見 openSearch），跳過這步。
+     *
+     * ⚠️ 這裡刻意**不**逐一退掉條件：退條件是組合卡裡 Backspace 的事（說明頁有寫），
+     *    兩顆鍵做同一件事只會讓 Esc 要按很多下才離得開。
+     */
+    if (this.view === "search" && !this.composing && this.mode === "nav" && this.searchKind !== "dir") {
+      this.reopenComposer();
       return;
     }
     /*
@@ -2243,13 +2249,22 @@ class YaziModal extends Modal {
     if (!v) return;
     this.runView(v);
     if (this.view !== "search") return;   // 索引還在建，runView 已經接手畫面了
-    this.composing = this.searchKind !== "dir";
+    this.reopenComposer();
+    new Notice(this.t("notice.viewEditing", "Editing “{name}” — save it with ,s under the same name", { name: v.name }));
+  }
+
+  /*
+   * 從搜尋結果回到組合卡。關鍵字與條件都原封留著 —— 「結果出來了但想再收窄一點」
+   * 是搜尋最常見的下一步，不該逼人從頭打一次。
+   * gd（找資料夾）沒有組合卡（見 openSearch），那就只是回到底部的輸入列。
+   */
+  reopenComposer() {
     this.mode = "search";
+    this.composing = this.searchKind !== "dir";
     this.inputEl.value = this.searchQuery || "";
     this.inputWrapEl.show();
     this.refreshSuggest(false);
     this.inputEl.focus();
-    new Notice(this.t("notice.viewEditing", "Editing “{name}” — save it with ,s under the same name", { name: v.name }));
     this.render();
   }
 
@@ -3323,15 +3338,7 @@ class YaziModal extends Modal {
            * 是搜尋最常見的下一步，不該逼人從頭打一次。
            * gd 沒有組合卡（見 openSearch 的說明），就只是回到底部輸入列。
            */
-          if (this.view === "search") {
-            this.mode = "search";
-            this.composing = this.searchKind !== "dir";
-            this.inputEl.value = this.searchQuery || "";
-            this.inputWrapEl.show();
-            this.refreshSuggest(false);
-            this.inputEl.focus();
-            this.render();
-          }
+          if (this.view === "search") this.reopenComposer();
           break;
         case "/":
           // 在現有結果裡再過濾一層

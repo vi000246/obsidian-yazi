@@ -27,14 +27,36 @@ const mk = (over) => Object.assign(Object.create(YaziModal.prototype), {
   buildList() { acts.push("build:" + this.view); },
   buildSearchList() { acts.push("build:search"); },
   endInput() {}, render() {}, swallow() {}, scope: { keys: [] },
+  reopenComposer() { acts.push("composer"); this.composing = true; },
 }, over);
 const esc = (m) => { acts.length = 0; m.escapeBack(); return acts.slice(); };
 
 /* ── 1. 沒有上一層 → 關視窗 ── */
 eq("檔案檢視、堆疊空：Esc 關視窗", esc(mk()), ["close"]);
-for (const v of ["bookmarks", "tabs", "recent", "frecency", "views", "outline", "relations", "search"]) {
+for (const v of ["bookmarks", "tabs", "recent", "frecency", "views", "outline", "relations"]) {
   eq("用命令直接開進 " + v + "（堆疊空）：Esc 關視窗", esc(mk({ view: v })), ["close"]);
 }
+
+/*
+ * ── 1b. 搜尋結果比較特別：組合卡與結果是同一層的兩個階段 ──
+ * Esc 先退回組合卡（條件留著可以改），再按才是離開整個搜尋。
+ */
+const res = mk({ view: "search", searchKind: "file" });
+eq("搜尋結果：Esc 先退回組合卡", esc(res), ["composer"]);
+eq("這時人在組合卡", res.composing, true);
+eq("組合卡再按 Esc 才離開（堆疊空 → 關視窗）", esc(res), ["close"]);
+
+eq("資料夾搜尋沒有組合卡，直接離開",
+   esc(mk({ view: "search", searchKind: "dir" })), ["close"]);
+eq("還在組合卡裡時不會又叫一次組合卡",
+   esc(mk({ view: "search", searchKind: "file", composing: true })), ["close"]);
+eq("輸入列有焦點時走 mode === search 那條，不是回組合卡",
+   esc(mk({ view: "search", searchKind: "file", mode: "search" })), ["close"]);
+
+/* 條件是用 Backspace 退的，Esc 不逐一拆掉（否則要按很多下才離得開） */
+const keep = mk({ view: "search", searchKind: "file", facets: [{ id: "a" }, { id: "b" }] });
+eq("有條件時 Esc 仍然是退回組合卡", esc(keep), ["composer"]);
+eq("條件原封不動", keep.facets.length, 2);
 
 /* ── 2. 有上一層 → 退回去，不關 ── */
 const back = mk({ view: "bookmarks", layers: [{ view: "files", listItems: [], listIndex: 0 }] });
@@ -43,7 +65,8 @@ eq("退回檔案檢視、堆疊空了", [back.view, back.layers.length], ["files
 eq("再按一次才關", esc(back), ["close"]);
 
 /* 退回清單時要重建（離開期間檔案可能被刪、書籤可能被移除） */
-const rebuilt = mk({ view: "search", layers: [{ view: "bookmarks", listItems: [{}, {}, {}], listIndex: 2, listFilter: "x" }] });
+// 起點刻意不用 search：那個檢視的 Esc 會先退回組合卡（見 1b），測不到 pop
+const rebuilt = mk({ view: "outline", layers: [{ view: "bookmarks", listItems: [{}, {}, {}], listIndex: 2, listFilter: "x" }] });
 eq("退回清單檢視會重建那份清單", esc(rebuilt), ["build:bookmarks"]);
 eq("過濾字也一起還原", [rebuilt.view, rebuilt.listFilter], ["bookmarks", "x"]);
 
@@ -76,10 +99,6 @@ eq("在檔案檢視但有上一層：Esc 退回去而不是關", esc(jumped), ["
 eq("回到書籤清單", jumped.view, "bookmarks");
 
 /* ── 5. 更內層的東西優先 ── */
-const withFacets = mk({ view: "search", facets: [{ id: "a" }, { id: "b" }] });
-eq("有搜尋條件時先退條件", esc(withFacets), ["build:search"]);
-eq("退掉一個條件、沒有動到堆疊", [withFacets.facets.length, withFacets.view], [1, "search"]);
-
 const help = mk({ view: "bookmarks", showHelp: true });
 eq("說明頁開著時先關說明", esc(help), []);
 eq("說明頁關了、視窗還在", [help.showHelp, help.view], [false, "bookmarks"]);
