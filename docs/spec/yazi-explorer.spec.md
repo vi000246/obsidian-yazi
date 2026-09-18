@@ -88,15 +88,15 @@ Obsidian command / hotkey
         ▼
 ┌──────────────────── YaziModal (src/main.js:536) ────────────────────┐
 │ window keydown (capture) ──► handleKey ──► mode × view dispatch     │
-│                              src/main.js:3113   resolvePending 3512 │
+│                              src/main.js:3113   resolvePending 3541 │
 │                                                                      │
 │  layers[] ◄── pushLayer / popLayer ◄── h / Esc / q                   │
-│  src/main.js:1662 / 1607            escapeBack src/main.js:1726      │
+│  src/main.js:1662 / 1672            escapeBack src/main.js:1726      │
 │                                                                      │
 │  ┌ parent col ┐  ┌ main col ┐  ┌ preview col ┐                       │
-│  │ folder or  │  │ files /  │  │ sanitised   │  renderPreview 4295   │
+│  │ folder or  │  │ files /  │  │ sanitised   │  renderPreview 4325   │
 │  │ prev hop   │  │ list view│  │ markdown    │  renderFilePreview    │
-│  └────────────┘  └──────────┘  └─────────────┘  4531 → 4465          │
+│  └────────────┘  └──────────┘  └─────────────┘  4561 → 4495          │
 └──────────────┬───────────────────────────────────────────────────────┘
                │ pure helpers (no Obsidian import)
    ┌───────────┼──────────────┬──────────────┬──────────────┐
