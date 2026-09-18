@@ -239,6 +239,11 @@ file name filled in — bookmarks are for recognising, and a file called `2026-0
 think of it. In the bookmark list, `R` renames one, `m` plus a letter assigns a shortcut, and then
 `'` plus that letter jumps there from anywhere.
 
+The same selection keys work inside these lists: `Space` picks a row and moves down, `v` / `V` pick a
+range, `^a` / `^r` select all or invert, and `x` then removes every selected row — closing tabs,
+deleting bookmarks or views, forgetting most-visited entries. Removing more than one always asks
+first, including tabs, because `X` only brings back the last one you closed.
+
 `T` lists open tabs, `b` bookmarks, `rf` recent files (newest first), and `z` shows **most visited** —
 folders you enter and files you open, ranked together by how often × how recently. The two are easy
 to confuse, so: `rf` is time only and files only; `z` counts visits, includes folders, and lets what

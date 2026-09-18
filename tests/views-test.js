@@ -47,7 +47,8 @@ function fakePlugin() {
 }
 
 const mk = (over) => Object.assign(Object.create(YaziModal.prototype), {
-  view: "files", mode: "nav", pending: null, showHelp: false, visual: 0,
+  view: "files", mode: "nav", pending: null, showHelp: false, visual: 0, visualAnchor: -1,
+  sel: new Set(), listSel: new Set(),
   listItems: [], listIndex: 0, listFilter: "", layers: [], facets: [], scopePath: "",
   searchKind: "file", searchQuery: "", composing: false, indexing: false,
   plugin: fakePlugin(), swallow() {}, render() {}, scope: { keys: [] },

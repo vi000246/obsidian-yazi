@@ -23,7 +23,7 @@ const mk = (over) => Object.assign(Object.create(YaziModal.prototype), {
   layers: [], opening: false, composing: false, relFile: null, outlineFile: null,
   searchKind: "file", searchQuery: "", scopePath: "", cwd: null, cursorPath: null, filter: "",
   forceClose: () => acts.push("close"),
-  sel: new Set(), visual: 0, visualAnchor: -1,
+  sel: new Set(), listSel: new Set(), visual: 0, visualAnchor: -1,
   setCursor() {}, cursorIndex() { return 0; },
   buildList() { acts.push("build:" + this.view); },
   buildSearchList() { acts.push("build:search"); },

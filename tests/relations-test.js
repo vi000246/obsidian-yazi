@@ -36,7 +36,8 @@ const app = {
   },
 };
 const mk = (view, over) => Object.assign(Object.create(YaziModal.prototype), {
-  view, mode: "nav", pending: null, showHelp: false, visual: 0, listItems: [], listIndex: 0,
+  view, mode: "nav", pending: null, showHelp: false, visual: 0, visualAnchor: -1,
+  sel: new Set(), listSel: new Set(), listItems: [], listIndex: 0,
   listFilter: "", relFile: null, layers: [], composing: false, relExpanded: new Set(), relCache: null,
   app, plugin: { settings: { relations: DEFAULT_RELATIONS } },
   sortCfg: () => ({ field: "natural", reverse: false, foldersFirst: true }),

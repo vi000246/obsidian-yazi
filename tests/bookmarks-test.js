@@ -36,7 +36,8 @@ const diary = F("200 Personal/001 日記/2026/2026-09-18.md");
 const folder = Object.assign({ path: "100 工作", name: "100 工作", children: [] });
 
 const mk = (over) => Object.assign(Object.create(YaziModal.prototype), {
-  view: "files", mode: "nav", pending: null, showHelp: false, visual: 0,
+  view: "files", mode: "nav", pending: null, showHelp: false, visual: 0, visualAnchor: -1,
+  sel: new Set(), listSel: new Set(),
   listItems: [], listIndex: 0, listFilter: "",
   plugin: fakePlugin(), swallow() {}, render() {}, scope: { keys: [] },
   sortCfg: () => ({ field: "natural", reverse: false, foldersFirst: true }),

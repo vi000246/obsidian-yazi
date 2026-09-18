@@ -183,9 +183,56 @@ const OVERLAYS = [
     open: (m) => m.mode === "confirm",
     close: (m) => { m.mode = "nav"; m.confirmTarget = null; m.confirmTargets = null; m.confirmAsk = null; } },
   { id: "selection",
-    open: (m) => m.view === "files" && m.hasSelection(),
+    open: (m) => m.hasSelection(),
     close: (m) => m.clearSelection() },
 ];
+
+/*
+ * 清單檢視裡「x ＝拿掉這一列」怎麼做。一列一張表，而不是四段 if：
+ * 多選批次刪只要照這張表跑一圈，單筆與批次就不會各長出一套行為
+ * （跟 OVERLAYS 那次重構同一個理由 —— if 階梯每加一種清單就漏一個分支）。
+ *
+ *   remove       真的拿掉一列，回傳 Promise
+ *   confirmOne   單筆要不要先問 y/n。使用者一筆一筆存下來的東西（書籤、檢視）才問；
+ *                分頁與「常去的地方」是隨手產生的紀錄，問了只是多一顆鍵
+ *   label        確認訊息與錯誤訊息裡怎麼稱呼這一列
+ *   ask / done   單筆的確認訊息與完成通知；askMany / doneMany 是多筆版
+ *
+ * 在這張表裡＝可以多選（見 listSelectable）。大綱、關聯、搜尋結果不在：那些清單的
+ * 每一列都是某個檔案的投影，「拿掉一列」沒有對應的動作（要刪檔案是回檔案檢視按 D）。
+ * 最近開啟也不在：那份清單由 Obsidian 維護，沒有公開 API 可以刪。
+ */
+const LIST_REMOVE = {
+  bookmarks: {
+    confirmOne: true,
+    ask: "confirm.deleteBookmark", askMany: "confirm.deleteBookmarks",
+    done: "notice.bookmarkRemoved", doneMany: "notice.bookmarksRemoved",
+    label: (it) => it.title || it.label || it.path,
+    remove: (m, it) => m.plugin.removeBookmark(it.path),
+  },
+  views: {
+    confirmOne: true,
+    ask: "confirm.deleteView", askMany: "confirm.deleteViews",
+    done: "notice.viewRemoved", doneMany: "notice.viewsRemoved",
+    label: (it) => (it.viewDef ? it.viewDef.name : it.label),
+    remove: (m, it) => m.plugin.removeView(it.viewDef.id),
+  },
+  tabs: {
+    confirmOne: false,
+    askMany: "confirm.closeTabs",
+    doneMany: "notice.tabsClosed",
+    label: (it) => it.label,
+    // detach() 就是關分頁。關掉之後重建清單，游標留在同一個索引 = 下一個分頁。
+    remove: (m, it) => Promise.resolve(it.leaf.detach()),
+  },
+  frecency: {
+    confirmOne: false,
+    askMany: "confirm.forgetFrecency",
+    done: "notice.frecencyRemoved", doneMany: "notice.frecencyRemovedN",
+    label: (it) => it.path,
+    remove: (m, it) => m.plugin.forgetFrecency(it.path),
+  },
+};
 
 /*
  * 這些前綴的標籤在 UI 裡一律濾掉（搜尋候選、預覽面板都是）。
@@ -489,6 +536,7 @@ const HELP = [
   ["^a / ^r", "help.sel.all"],
   ["Esc", "help.sel.esc"],
   ["(selection survives folders)", "help.sel.across"],
+  ["(in a list) <Space> / v / ^a", "help.sel.list"],
   ["help.sec.clipboard"],
   ["y", "help.clip.y"],
   ["x", "help.clip.x"],
@@ -617,8 +665,17 @@ class YaziModal extends Modal {
     this.previewToken = 0;
     this.indexing = false;
     this.sel = new Set();     // 多選：選取的路徑（跨資料夾保留，對齊 yazi）
+    /*
+     * 清單檢視的多選。刻意跟 sel 分開存：
+     *   1. 清單的項目不一定有路徑（分頁只有 leaf，檢視只有 id），見 listSelKey
+     *   2. 兩者不是同一件事 —— 選了三個書籤之後退回檔案檢視，那三筆不是
+     *      「選了三個檔案」，它們是書籤那份清單上的三列
+     * 換一份清單就清掉（見 resetListSelection）。
+     */
+    this.listSel = new Set();
     this.visual = 0;          // 0=關 / 1=v（選取） / -1=V（取消選取）
-    this.visualAnchor = -1;   // visual 起點在 mainList() 的索引
+    this.visualAnchor = -1;   // visual 起點在目前這份清單的索引（見 selIndex）
+    this.visualBase = null;   // 進 visual 之前的選取長相（見 applyVisual）
   }
 
   /* ── 生命週期 ── */
@@ -910,6 +967,7 @@ class YaziModal extends Modal {
     if (this.view !== "files") {
       if (!this.listItems.length) return;
       this.listIndex = this.nextIndex(this.listIndex, delta, this.listItems.length);
+      this.applyVisual();   // v / V 進行中：移動就是在拉選取範圍（同檔案檢視）
       this.render();
       return;
     }
@@ -923,6 +981,7 @@ class YaziModal extends Modal {
   goEdge(toEnd) {
     if (this.view !== "files") {
       this.listIndex = toEnd ? Math.max(0, this.listItems.length - 1) : 0;
+      this.applyVisual();
     } else {
       this.setCursor(toEnd ? this.mainList().length - 1 : 0);
       this.applyVisual();
@@ -1049,6 +1108,7 @@ class YaziModal extends Modal {
     this.view = view;
     this.listIndex = 0;
     this.showHelp = false;
+    this.resetListSelection();
     this.buildList();
     this.render();
   }
@@ -1688,6 +1748,7 @@ class YaziModal extends Modal {
     const s = this.layers.pop();
     if (!s) return false;
     this.editingView = null;   // 離開組合卡（不管是存了還是 Esc）就不再是編輯模式
+    this.resetListSelection();  // 快照不帶選取：退回去看到的是那份清單，不是當時選了哪幾列
     const idx = s.listIndex;
     Object.assign(this, s);
     /*
@@ -1703,6 +1764,7 @@ class YaziModal extends Modal {
 
   /* 切回檔案檢視本身（不動堆疊）。h 在沒有上一層時用這個。 */
   toFilesView() {
+    this.resetListSelection();   // 清單的選取屬於那份清單，不跟著人走進 vault
     this.view = "files";
     this.listItems = [];
     // 這裡是「從清單跳進 vault」唯一的落地點：記住站在哪個資料夾（見 landing）
@@ -1755,8 +1817,11 @@ class YaziModal extends Modal {
     for (const o of OVERLAYS) if (o.ephemeral && o.open(this)) o.close(this);
   }
 
+  // 「目前這個檢視有沒有選取狀態」——Esc 靠它決定這一下是收狀態還是退一層
   hasSelection() {
-    return !!(this.sel && this.sel.size) || !!this.visual;
+    if (this.visual) return true;
+    if (this.view !== "files") return !!(this.listSel && this.listSel.size);
+    return !!(this.sel && this.sel.size);
   }
 
   /*
@@ -2521,56 +2586,72 @@ class YaziModal extends Modal {
     this.openList("relations", { skipPush: true });
   }
 
-  // 清單裡按 x
+  /*
+   * 清單裡按 x：有選取就處理選取的那幾列，沒有就是游標那一列（同檔案檢視的 y / x / D）。
+   *
+   * 問不問 y/n 的界線刻意不是「單筆 vs 多筆」，而是兩條疊起來：
+   *   - 使用者一筆一筆存下來的東西（書籤、檢視）一律問，因為 x 就在 j/k 旁邊
+   *   - **只要是多筆就一律問**，連分頁也問 —— 一次收掉 12 個分頁跟關掉一個不是同一件事，
+   *     而 X（還原剛關掉的）只救得回最後一個
+   */
   removeListItem() {
-    const item = this.listCurrent();
-    if (!item) return;
-    if (this.view === "outline" || this.view === "relations") return;   // 這兩種清單沒有「刪掉這一列」的意思
-
-    // 檢視與書籤都是使用者一筆一筆存下來的，x 又在 j/k 附近 —— 刪之前問一聲，y 才動手
-    if (this.view === "views" && item.viewDef && this.plugin) {
-      const v = item.viewDef;
-      this.askConfirm(this.t("confirm.deleteView", "Delete view “{name}”?", { name: v.name }), () => {
-        this.plugin.removeView(v.id).then(() => {
-          this.buildList();
-          this.render();
-        });
-        new Notice(this.t("notice.viewRemoved", "View deleted: {name}", { name: v.name }));
-      });
+    if (this.view === "outline" || this.view === "relations") return;   // 這兩種清單沒有「拿掉一列」的意思
+    const spec = LIST_REMOVE[this.view];
+    if (!spec) {
+      // 最近開啟：那份清單由 Obsidian 維護，沒有公開 API 可以刪單筆
+      if (this.view === "recent") new Notice(this.t("notice.recentNoDelete", "Recent files cannot be deleted from here"));
       return;
     }
+    if (!this.plugin) return;
+    const items = this.listTargets();
+    if (!items.length) return;
 
-    if (this.view === "tabs") {
-      // detach() 就是關分頁。關掉之後重建清單，游標留在同一個索引 = 下一個分頁。
-      item.leaf.detach();
-      this.buildList();
-      this.render();
+    if (items.length === 1 && !spec.confirmOne) {
+      this.removeListItems(items);
       return;
     }
+    const message =
+      items.length === 1
+        ? this.t(spec.ask, "Remove “{name}”?", { name: spec.label(items[0]) })
+        : this.t(spec.askMany, "Remove the {count} selected items?", { count: items.length });
+    this.askConfirm(message, () => this.removeListItems(items));
+  }
 
-    if (this.view === "bookmarks" && this.plugin) {
-      const label = item.title || item.path;
-      this.askConfirm(this.t("confirm.deleteBookmark", "Delete bookmark “{name}”?", { name: label }), () => {
-        this.plugin.removeBookmark(item.path).then(() => {
-          this.buildList();
-          this.render();
-        });
-        new Notice(this.t("notice.bookmarkRemoved", "Bookmark removed: {path}", { path: label }));
-      });
+  /*
+   * 真的動手拿掉那幾列。一筆一筆等（不 Promise.all）：書籤與檢視的移除各自會寫一次
+   * data.json，併發寫同一個檔會互相蓋掉彼此的結果。
+   * 中途失敗的不擋住其他筆 —— 收集起來一次報，跟檔案刪除（doDelete）同一個處理方式。
+   */
+  async removeListItems(items) {
+    const spec = LIST_REMOVE[this.view];
+    if (!spec) return;
+    const errs = [];
+    for (const it of items) {
+      try {
+        await spec.remove(this, it);
+      } catch (e) {
+        errs.push(spec.label(it) + "：" + msg(e));
+      }
+    }
+    this.resetListSelection();
+    this.buildList();
+    this.render();
+    if (errs.length) {
+      new Notice(this.t("notice.removeFailed", "Failed to remove {count} items:\n{errors}",
+        { count: errs.length, errors: errs.join("\n") }), 10000);
       return;
     }
-
-    if (this.view === "frecency" && this.plugin) {
-      this.plugin.forgetFrecency(item.path).then(() => {
-        this.buildList();
-        this.render();
-      });
-      new Notice(this.t("notice.frecencyRemoved", "Removed from most visited: {path}", { path: item.path }));
+    if (items.length === 1) {
+      // 單筆維持原本那句（「已刪除書籤：某某」）；分頁沒有單筆通知，本來也沒有。
+      // path 與 name 都帶：這幾句訊息的佔位字本來就不一樣（書籤用 {path}、檢視用 {name}），
+      // 在這裡統一成一種反而會讓其中一句印出沒被代換的 {name}
+      if (spec.done) {
+        const label = spec.label(items[0]);
+        new Notice(this.t(spec.done, "Removed: {path}", { path: label, name: label }));
+      }
       return;
     }
-
-    // 最近開啟：那份清單由 Obsidian 維護，沒有公開 API 可以刪單筆
-    new Notice(this.t("notice.recentNoDelete", "Recent files cannot be deleted from here"));
+    new Notice(this.t(spec.doneMany, "Removed {count} items", { count: items.length }));
   }
 
   /* ── 書籤 ── */
@@ -3008,6 +3089,62 @@ class YaziModal extends Modal {
     else this.sel.add(f.path);
   }
 
+  /* ── 清單檢視的多選 ──
+   *
+   * 鍵位與檔案檢視完全一樣（Space / v / V / ^a / ^r ＋ Esc 清掉），因為它回答的是
+   * 同一個問題：「這幾列，一起處理」。差別只在選取存在 listSel、而且身分不是路徑。
+   */
+
+  // 這份清單支援多選嗎（＝x 對它有意義嗎，見 LIST_REMOVE）
+  listSelectable() {
+    return this.view !== "files" && !!LIST_REMOVE[this.view];
+  }
+
+  /*
+   * 一列的身分。要能撐過 buildList()（刪一筆、指定一個字母都會重建整份清單），
+   * 所以不能用索引。
+   *   書籤 / 常去的地方 → 路徑
+   *   檢視            → viewDef.id
+   *   分頁            → leaf 物件本身。兩個分頁可以開同一個檔，路徑不是身分；
+   *                     而 leaf 在重建之間是同一個物件（collectTabs 重讀的就是它們）
+   */
+  listSelKey(item) {
+    if (!item) return null;
+    if (this.view === "views") return item.viewDef ? item.viewDef.id : null;
+    if (this.view === "tabs") return item.leaf || null;
+    return item.path || null;
+  }
+
+  toggleListSelect(item) {
+    const k = this.listSelKey(item);
+    if (k == null) return;
+    if (this.listSel.has(k)) this.listSel.delete(k);
+    else this.listSel.add(k);
+  }
+
+  /*
+   * 這次 x 要處理哪幾列：有選取就是選取的那些，沒有就是游標這一列。
+   * 順序照**清單目前的順序**而不是選取順序 —— 確認訊息與實際刪除的順序都該
+   * 跟眼睛看到的一致。
+   */
+  listTargets() {
+    if (this.listSelectable() && this.listSel.size) {
+      const out = this.listItems.filter((it) => this.listSel.has(this.listSelKey(it)));
+      if (out.length) return out;
+      this.listSel.clear();   // 選的那幾列已經不在清單上了（別處刪掉）：當作沒選
+    }
+    const cur = this.listCurrent();
+    return cur ? [cur] : [];
+  }
+
+  /* 換一份清單就把選取清掉：不同種類的清單之間「選了哪幾列」沒有意義可以延續 */
+  resetListSelection() {
+    this.listSel.clear();
+    this.visual = 0;
+    this.visualAnchor = -1;
+    this.visualBase = null;
+  }
+
   /*
    * 「這次動作的對象」：有選取就用選取的，沒有就用游標這一個。
    * y / x / D 全都走這裡，批次與單筆不必各寫一份。
@@ -3026,16 +3163,33 @@ class YaziModal extends Modal {
     return cur ? [cur] : [];
   }
 
-  // 回傳「有沒有真的清掉東西」，讓 Esc 知道這一下是不是已經消化掉了
+  /*
+   * 回傳「有沒有真的清掉東西」，讓 Esc 知道這一下是不是已經消化掉了。
+   * 只清**目前這個檢視**的選取：在書籤清單按 Esc 不該順手把進來之前選好的那幾個
+   * 檔案也清掉（檔案的選取跨資料夾保留，那是 yazi 的語意）。
+   */
   clearSelection() {
-    const had = this.sel.size || this.visual;
-    this.sel.clear();
+    const listView = this.view !== "files";
+    const had = this.visual || (listView ? this.listSel.size : this.sel.size);
+    if (listView) this.listSel.clear();
+    else this.sel.clear();
     this.visual = 0;
     this.visualAnchor = -1;
+    this.visualBase = null;
     return !!had;
   }
 
   selectAll(state) {
+    if (this.view !== "files") {
+      if (!this.listSelectable()) return;
+      for (const it of this.listItems) {
+        const k = this.listSelKey(it);
+        if (k == null) continue;
+        if (state) this.listSel.add(k);
+        else this.listSel.delete(k);
+      }
+      return;
+    }
     for (const f of this.mainList()) {
       if (state) this.sel.add(f.path);
       else this.sel.delete(f.path);
@@ -3043,6 +3197,16 @@ class YaziModal extends Modal {
   }
 
   invertSelection() {
+    if (this.view !== "files") {
+      if (!this.listSelectable()) return;
+      for (const it of this.listItems) {
+        const k = this.listSelKey(it);
+        if (k == null) continue;
+        if (this.listSel.has(k)) this.listSel.delete(k);
+        else this.listSel.add(k);
+      }
+      return;
+    }
     for (const f of this.mainList()) {
       if (this.sel.has(f.path)) this.sel.delete(f.path);
       else this.sel.add(f.path);
@@ -3059,27 +3223,52 @@ class YaziModal extends Modal {
     if (this.visual === mode) {
       this.visual = 0;
       this.visualAnchor = -1;
+      this.visualBase = null;   // 選取本身留著，只是不再跟著游標動
       this.render();
       return;
     }
+    if (this.view !== "files" && !this.listSelectable()) return;
     this.visual = mode;
-    this.visualAnchor = this.cursorIndex();
+    this.visualAnchor = this.selIndex();
+    this.visualBase = new Set(this.view === "files" ? this.sel : this.listSel);
     this.applyVisual();
     this.render();
   }
 
+  /* visual 的錨點與範圍都用「目前這份清單」的索引：檔案檢視是 mainList()，清單檢視是 listItems */
+  selIndex() {
+    return this.view === "files" ? this.cursorIndex() : this.listIndex;
+  }
+
+  /*
+   * 把 anchor → 現在位置整段重新套一次。
+   *
+   * ⚠️ 關鍵是**先還原成進 visual 之前的樣子**（visualBase）再套。只往範圍內加／減的話，
+   * 往回拉時剛剛掃過、現在已經離開範圍的那幾列會留在選取裡 —— 症狀是「v 之後 j j j k k
+   * 還是選了四列」。有了 base 就不必記住「剛剛是從哪個方向過來的」，而且 V（成段取消）
+   * 拉回來時本來被取消掉的那幾列也會回來。
+   */
   applyVisual() {
     if (!this.visual || this.visualAnchor < 0) return;
-    const list = this.mainList();
-    const i = this.cursorIndex();
+    const i = this.selIndex();
     if (i < 0) return;
+    const listView = this.view !== "files";
+    if (listView && !this.listSelectable()) return;
+    const set = listView ? this.listSel : this.sel;
+    if (this.visualBase) {
+      set.clear();
+      for (const k of this.visualBase) set.add(k);
+    }
     const from = Math.min(this.visualAnchor, i);
     const to = Math.max(this.visualAnchor, i);
+    // 清單先取出來：mainList() 每次都要重排一遍，放在迴圈裡等於長清單拉一段就排幾百次
+    const rows = listView ? this.listItems : this.mainList();
     for (let k = from; k <= to; k++) {
-      const f = list[k];
-      if (!f) continue;
-      if (this.visual > 0) this.sel.add(f.path);
-      else this.sel.delete(f.path);
+      const row = rows[k];
+      const key = listView ? this.listSelKey(row) : row && row.path;
+      if (key == null) continue;
+      if (this.visual > 0) set.add(key);
+      else set.delete(key);
     }
   }
 
@@ -3433,7 +3622,8 @@ class YaziModal extends Modal {
      * 只有這兩個 Ctrl 組合自己處理（對齊 yazi 的 <C-a> 全選 / <C-r> 反選）。
      * 其餘組合鍵一律放行 —— modal 開著時 Ctrl+P 之類還是要能用。
      */
-    if (this.view === "files" && ev.ctrlKey && !ev.altKey && !ev.metaKey && (key === "a" || key === "r")) {
+    if ((this.view === "files" || this.listSelectable()) &&
+        ev.ctrlKey && !ev.altKey && !ev.metaKey && (key === "a" || key === "r")) {
       this.swallow(ev);
       if (key === "a") this.selectAll(true);
       else this.invertSelection();
@@ -3513,6 +3703,23 @@ class YaziModal extends Modal {
         case "t": this.activateListItem("tab"); break;
         case "x": this.removeListItem(); break;
         case "X": this.undoCloseTab(); break;
+        /*
+         * 多選：跟檔案檢視同一套鍵（Space 切換並下移、v / V 成段選取／取消）。
+         * 只在 x 有意義的那幾種清單收 —— 其他清單選起來也沒有能對它們做的事，
+         * 給了只會讓人以為接下來有東西可按。
+         *
+         * ⚠️ v / V 因此會蓋掉「按該筆的快捷字母直接開」（下面的 default）對字母
+         * v / V 的支援 —— 這條規則本來就是這樣：switch 接過的字母一律優先
+         * （d / u / x / t / R… 早就是了），要從任何地方跳書籤請用 ' + 字母。
+         */
+        case " ":
+          if (this.listSelectable()) {
+            this.toggleListSelect(this.listCurrent());
+            this.move(1);
+          }
+          break;
+        case "v": if (this.listSelectable()) this.toggleVisual(1); break;
+        case "V": if (this.listSelectable()) this.toggleVisual(-1); break;
         case "g": this.pending = "g"; this.render(); break;
         case "y": this.pending = "y"; this.render(); break;
         case "T": this.openList("tabs"); break;
@@ -4162,7 +4369,14 @@ class YaziModal extends Modal {
         ? [["h / Esc", this.t("legend.backLayer", "back to where you came from")],
            ["q", this.t("legend.closeExplorer", "close the explorer")]]
         : [["Esc / q", this.t("legend.closeExplorer", "close the explorer")]];
-    for (const [k, desc] of keys.concat(back)) {
+    /*
+     * 多選那一列只在支援的清單上出現（見 LIST_REMOVE）。位置在各清單自己的圖例之後、
+     * 退出那幾列之前 —— 它講的是「x 之前可以先做的事」，緊貼著 x 才讀得通。
+     */
+    const pick = this.listSelectable()
+      ? [["<Space> / v", this.t("legend.pick", "select this row / a range — x then acts on all of them")]]
+      : [];
+    for (const [k, desc] of keys.concat(pick, back)) {
       const row = legend.createDiv({ cls: "yazi-help-row" });
       row.createSpan({ cls: "yazi-help-key", text: k });
       row.createSpan({ cls: "yazi-help-desc", text: desc });
@@ -4270,7 +4484,14 @@ class YaziModal extends Modal {
        * 而那正是用來認出「這是什麼」的東西。
        */
       if (this.view === "views" || this.view === "bookmarks") row.addClass("is-twoline");
-      row.createSpan({ cls: "yazi-icon", text: item.icon || (item.active ? "●" : info ? info.icon : "·") });
+      /*
+       * 選取中的那幾列：✓ 佔掉 icon 欄（書籤／檢視平常放的是快捷字母）。
+       * 跟檔案檢視同一個判斷 —— 選取是暫時狀態，而「哪幾列被我選起來了」比
+       * 「它的快捷字母是什麼」更急著要看見。
+       */
+      const picked = this.listSelectable() && this.listSel.has(this.listSelKey(item));
+      if (picked) row.addClass("is-selected");
+      row.createSpan({ cls: "yazi-icon", text: picked ? "✓" : item.icon || (item.active ? "●" : info ? info.icon : "·") });
       const nameEl = row.createSpan({ cls: "yazi-name", text: item.label });
       if (item.missing) nameEl.addClass("is-missing");
       if (item.sub) row.createSpan({ cls: "yazi-sub", text: item.sub });
@@ -4933,7 +5154,9 @@ class YaziModal extends Modal {
     const count = n ? `${i + 1}/${n}` : "0/0";
     const bits = [count, this.t("ui.sortShort", "sort:") + this.sortText()];
     if (this.visual) bits.push(this.visual > 0 ? "VISUAL" : this.t("ui.visualUnselect", "VISUAL (unselect)"));
-    if (this.sel.size) bits.push(this.t("ui.selected", "{count} selected", { count: this.sel.size }));
+    // 選取數：檔案檢視與清單檢視各有一個集合，狀態列只報人現在看著的那個
+    const picked = this.view === "files" ? this.sel.size : this.listSel.size;
+    if (picked) bits.push(this.t("ui.selected", "{count} selected", { count: picked }));
     const clipNow = this.clip();
     if (clipNow && clipNow.paths.length) {
       bits.push(this.t(clipNow.cut ? "ui.cutN" : "ui.copiedN",

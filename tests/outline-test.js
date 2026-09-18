@@ -13,7 +13,8 @@ const eq = (n, got, want) => { const ok = JSON.stringify(got) === JSON.stringify
 
 const ev = (key) => ({ key, type: "keydown", preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} });
 const base = (view) => Object.assign(Object.create(YaziModal.prototype), {
-  view, mode: "nav", pending: null, showHelp: false, visual: 0, listItems: [{}, {}], listIndex: 0, layers: [],
+  view, mode: "nav", pending: null, showHelp: false, visual: 0, visualAnchor: -1,
+  sel: new Set(), listSel: new Set(), listItems: [{}, {}], listIndex: 0, layers: [],
   swallow() {}, render() {}, scope: { keys: [] }, plugin: null,
 });
 
