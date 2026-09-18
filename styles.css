@@ -135,6 +135,17 @@
   background: var(--background-modifier-hover);
 }
 
+/* 渲染失敗時的那一行。刻意留在內容上方而不是用 Notice：
+   Notice 幾秒就消失，而這個狀態會一直持續到換一個檔案。 */
+.yazi-preview-warn {
+  margin: 0 0 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  font-size: 0.82em;
+}
+
 .yazi-empty {
   padding: 4px 12px;
   color: var(--text-faint);
@@ -395,6 +406,15 @@ input.yazi-input {
 
 .yazi-root.is-help .yazi-help-row {
   align-items: baseline;
+}
+
+/* 說明頁 / 搜尋的命中片段。用 <mark> 但不吃瀏覽器預設的黃底黑字 —— 那在深色主題
+   裡刺眼到會蓋過周圍的文字，而這裡要的是「看得出來」不是「跳出來」。 */
+.yazi-hit {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: var(--text-highlight-bg, rgba(255, 208, 0, 0.35));
+  color: inherit;
 }
 
 .yazi-help-section {

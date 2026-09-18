@@ -45,7 +45,7 @@ add the beta plugin `vi000246/obsidian-yazi`.
 1. Open *Settings → Hotkeys*, search for **Yazi**, and give **“Open file explorer”** a key.
    `Alt+E` is a good one. (Everything else is reachable from inside, so one hotkey is enough.)
 2. Press it. The explorer opens **on the file you are editing**, with that folder around it.
-3. Press `?` to see every key.
+3. Press `?` to see every key — and `/` inside that page to search it.
 
 ```
 j / k      down / up               l / Enter / o   folder → enter, file → open
@@ -160,7 +160,7 @@ rename tracking, backlinks and graph work.
 
 ### Saved views
 
-A search you want back tomorrow can be kept. Run it, then press `,s` and give it a name. `,v` lists
+A search you want back tomorrow can be kept. Run it, then press `s` and give it a name. `gv` lists
 what you saved:
 
 ```
@@ -171,17 +171,34 @@ r  Read later            full text · "reading" · in 400 QuickNote
 
 A view stores the **words, conditions and scope — not the results**, so it is re-run every time and
 always reflects the vault as it is now. In the list, `Enter` runs one, `e` loads it back into the
-search card so you can change its conditions (`,s` under the same name then replaces it), `x`
+search card so you can change its conditions (`s` under the same name then replaces it), `x`
 deletes it, and `m` plus a letter assigns a shortcut — after which that letter runs it straight from
 the list.
-
-`,v` is also the command **Open saved views**, so you can bind it under Obsidian's own hotkeys and
-land in the list from anywhere.
 
 Views are editable under **Settings → Relations & views** too — name, letter, words, folder, and
 removing conditions. *Adding* a condition is deliberately only possible in the explorer: there the
 candidate values are read from your vault and come with counts, so you can see that a value actually
 exists rather than typing one and hoping.
+
+### Getting in from outside
+
+One hotkey for **Open file explorer** is enough to use everything, but each list is also its own
+command, so you can bind the ones you reach for — with Obsidian's own hotkeys, or a leader-key
+plugin, where these work well as `,`-sequences:
+
+| command | opens |
+|---|---|
+| Open file explorer | where you are |
+| Open saved views | the view list |
+| Open outline / Open relations | the current note's headings / links |
+| Open tab list · bookmarks · recent files · frequently used | those lists |
+| Search: full text · file names · folders | straight into that search |
+
+### Finding a key
+
+Press `?` for the full list, then `/` to search it — matches are highlighted, and typing a section
+name (`preview`, `bookmarks`) keeps that whole section. `Esc` clears the search, `Esc` again closes
+the page.
 
 ### Working with files
 
@@ -331,7 +348,8 @@ searching) and an icon.
 
 The keys inside the explorer are fixed, because they are an interlocking set: `d`/`u` are half-page,
 which is why delete is `D`; `y` yanks files, which is why copying a path lives under `c`. Change one
-in isolation and the reason for the others disappears. Press `?` inside the explorer for the full list.
+in isolation and the reason for the others disappears. Press `?` inside the explorer for the full
+list, and `/` in that page to search it.
 
 What you *can* do is **alias one key to another**, the same idea as Surfingkeys' `map`:
 
@@ -360,7 +378,7 @@ doing nothing.
 | **Clipboard** | `y` `x` `p` `P` `Y` `X` |
 | **Files** | `a` `A` `R` `D` `c`(`cc` `cd` `cf` `cn` `cr`) |
 | **Sort** | `S`(then a sort key) |
-| **Views** | `,`(`,v` `,s`) |
+| **Views** | `gv` `s`(in search results) |
 | **Preview** | `J` `K` `PageDown` `PageUp` `,`(`,x` `,X` `,p`) |
 | **Other** | `/` `?` `q` |
 

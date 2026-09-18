@@ -395,8 +395,8 @@ const HELP = [
   ["go", "help.list.go"],
   ["gr", "help.list.gr"],
   ["(relations) Enter / l", "help.list.grJump"],
-  [",v", "help.list.gv"],
-  [",s", "help.list.vsave"],
+  ["gv", "help.list.gv"],
+  ["(search results) s", "help.list.vsave"],
   ["(views) e", "help.list.vedit"],
   ["(views) m + letter", "help.list.vassign"],
   ["(in a list) x", "help.list.x"],
@@ -453,7 +453,7 @@ const PENDING_MENUS = {
   g: {
     descKey: "menu.g.desc",
     items: [["g", "menu.g.g"], ["t", "menu.g.t"], ["f", "menu.g.f"], ["d", "menu.g.d"],
-            ["o", "menu.g.o"], ["r", "menu.g.r"], ["b", "menu.g.b"]],
+            ["o", "menu.g.o"], ["r", "menu.g.r"], ["v", "menu.g.v"], ["b", "menu.g.b"]],
   },
   c: {
     descKey: "menu.c.desc",
@@ -461,8 +461,7 @@ const PENDING_MENUS = {
   },
   ",": {
     descKey: "menu.comma.desc",
-    items: [["x", "menu.comma.x"], ["X", "menu.comma.X"], ["p", "menu.comma.p"],
-            ["v", "menu.comma.v"], ["s", "menu.comma.s"]],
+    items: [["x", "menu.comma.x"], ["X", "menu.comma.X"], ["p", "menu.comma.p"]],
   },
   r: { descKey: "menu.r.desc", items: [["f", "menu.r.f"]] },
   assign: { key: "m", descKey: "menu.assign.desc", noteKey: "menu.assign.note" },
@@ -622,6 +621,9 @@ class YaziModal extends Modal {
         if (this.view === "search") this.buildSearchList();
         else this.buildList();
         this.render();
+      } else if (this.mode === "helpfilter") {
+        this.helpFilter = this.inputEl.value;
+        this.render();
       } else if (this.mode === "search") {
         this.searchQuery = this.inputEl.value;
         this.listIndex = 0;
@@ -699,6 +701,10 @@ class YaziModal extends Modal {
     if (this.initialView === "search-text") this.openSearch("text");
     else if (this.initialView === "search-file") this.openSearch("file");
     else if (this.initialView === "search-dir") this.openSearch("dir");
+    // 大綱與關聯要有「游標所指的檔」才成立 —— 從命令進來時那就是目前開著的檔。
+    // 開不成（沒開檔、開的不是 md）就留在檔案檢視，openOutline 自己會說明原因。
+    else if (this.initialView === "outline") this.openOutline();
+    else if (this.initialView === "relations") this.openRelations();
     else if (this.initialView && this.initialView !== "files") this.openList(this.initialView);
     else this.render();
   }
@@ -1572,7 +1578,16 @@ class YaziModal extends Modal {
       this.render();
       return;
     }
-    // 說明頁是疊在最上層的，第一個 Esc 應該只收掉它
+    /*
+     * 說明頁是疊在最上層的，第一個 Esc 應該只收掉它 —— 但如果正在／已經搜尋，
+     * 先清掉搜尋（一次退一層：輸入 → 過濾結果 → 說明頁本身）。
+     */
+    if (this.showHelp && (this.mode === "helpfilter" || this.helpFilter)) {
+      this.helpFilter = "";
+      if (this.mode === "helpfilter") this.endInput();
+      this.render();
+      return;
+    }
     if (this.showHelp) {
       this.showHelp = false;
       this.render();
@@ -1606,6 +1621,7 @@ class YaziModal extends Modal {
     if (this.mode === "confirm") {
       this.mode = "nav";
       this.confirmTarget = null;
+      this.confirmAsk = null;
       this.render();
       return;
     }
@@ -2037,6 +2053,13 @@ class YaziModal extends Modal {
       new Notice(this.t("notice.viewNeedsSearch", "Run a search first, then save it as a view"));
       return;
     }
+    this.askConfirm(
+      this.t("confirm.saveView", "Save this search as a view?"),
+      () => this.promptViewName()
+    );
+  }
+
+  promptViewName() {
     const suggested = this.searchQuery || (this.facets[0] ? this.facetLabel(this.facets[0]) : "");
     this.promptFor(this.t("prompt.saveView", "Save this search as: "), suggested, async (name) => {
       const label = (name || "").trim();
@@ -2300,7 +2323,15 @@ class YaziModal extends Modal {
       return;
     }
     const label = target.path === "/" ? this.t("ui.vaultRoot", "(vault root)") : target.path;
-    this.plugin.addBookmark(target.path).then((added) => {
+    // m / M 就在 j/k 旁邊，很容易誤按；問一聲比事後去書籤清單裡找出來刪掉便宜
+    this.askConfirm(
+      this.t("confirm.bookmark", "Bookmark “{name}”?", { name: label }),
+      () => this.doAddBookmark(target.path, label)
+    );
+  }
+
+  doAddBookmark(path, label) {
+    this.plugin.addBookmark(path).then((added) => {
       new Notice(added
       ? this.t("notice.bookmarkAdded", "Bookmarked: {path}", { path: label })
       : this.t("notice.bookmarkExists", "Already bookmarked: {path}", { path: label }));
@@ -2440,6 +2471,17 @@ class YaziModal extends Modal {
         new Notice(this.t("notice.renameFailed", "Rename failed: {error}", { error: msg(e) }));
       }
     });
+  }
+
+  /*
+   * 通用的 y/n 確認，走跟刪除同一個 confirm 模式（底部狀態列變紅、y 才執行）。
+   * 用底部那一列而不是另開一個 Modal：另開視窗會把焦點搶走，回來之後鍵盤狀態
+   * 要重新接一次；而這個介面的每一次確認都只是一顆鍵的事。
+   */
+  askConfirm(message, onYes) {
+    this.mode = "confirm";
+    this.confirmAsk = { message, onYes };
+    this.render();
   }
 
   askDelete() {
@@ -2952,6 +2994,15 @@ class YaziModal extends Modal {
     }
 
     /* 在搜尋結果中再過濾 */
+    /* 說明頁的 / 搜尋：輸入列有焦點，Enter 收起輸入列但**留著**過濾結果 */
+    if (this.mode === "helpfilter") {
+      if (key === "Enter") { this.swallow(ev); this.endInput(); this.render(); return; }
+      if (key === "Escape") { this.swallow(ev); this.escapeBack(); return; }
+      ev.stopPropagation();
+      if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+      return;
+    }
+
     if (this.mode === "listfilter") {
       if (key === "ArrowDown" || (ev.ctrlKey && key === "j")) { this.swallow(ev); this.move(1); return; }
       if (key === "ArrowUp" || (ev.ctrlKey && key === "k")) { this.swallow(ev); this.move(-1); return; }
@@ -2992,7 +3043,18 @@ class YaziModal extends Modal {
     /* 刪除確認 */
     if (this.mode === "confirm") {
       this.swallow(ev);
-      if (key === "y" || key === "Y") {
+      const yes = key === "y" || key === "Y";
+      // 通用確認（askConfirm）優先；沒有的話就是刪除那條老路
+      if (this.confirmAsk) {
+        const ask = this.confirmAsk;
+        this.confirmAsk = null;
+        this.mode = "nav";
+        if (yes) ask.onYes();
+        // onYes 可能自己換了模式（例如接著問名字），重畫一次把狀態列上的問句換掉
+        this.render();
+        return;
+      }
+      if (yes) {
         this.doDelete();
       } else {
         this.mode = "nav";
@@ -3074,6 +3136,23 @@ class YaziModal extends Modal {
 
     if (ev.altKey || ev.ctrlKey || ev.metaKey) return;   // 組合鍵放行給 Obsidian
 
+    /*
+     * 說明頁開著時，/ 是「在說明裡找」而不是「篩選檔案」—— 說明頁蓋住整個版面，
+     * 底下那份檔案清單此刻根本看不到，篩選它沒有意義。
+     * 其他鍵照原本的路走（? 關閉、Esc 退一層），所以這裡只攔這一顆。
+     */
+    if (this.showHelp && key === "/") {
+      this.swallow(ev);
+      this.mode = "helpfilter";
+      this.inputLabelEl.setText(this.t("ui.helpFilterLabel", "Find in help: "));
+      this.inputEl.value = this.helpFilter || "";
+      this.inputWrapEl.show();
+      this.inputEl.focus();
+      this.inputEl.select();
+      this.render();
+      return;
+    }
+
     /* 清單檢視（分頁 / 書籤 / 最近） */
     if (this.view !== "files") {
       this.swallow(ev);
@@ -3137,9 +3216,19 @@ class YaziModal extends Modal {
           else if (this.view === "views") { this.pending = "vassign"; this.render(); }
           break;
         case "e":
-          // 檢視清單裡的 e ＝把這個檢視載回組合卡去改條件（改完 ,s 用同名存回去）
+          // 檢視清單裡的 e ＝把這個檢視載回組合卡去改條件（改完 s 用同名存回去）
           if (this.view === "views") this.editView((this.listCurrent() || {}).viewDef);
           break;
+        // 搜尋結果裡的 s ＝把這次搜尋存成檢視。只在搜尋結果有意義，
+        // 其他清單（分頁、書籤…）沒有「條件」可存
+        case "s":
+          if (this.view === "search") this.saveCurrentView();
+          break;
+        /*
+         * , 前綴在清單檢視裡原本整個沒接 —— 於是 ,p（切換渲染預覽）在搜尋結果裡
+         * 按了完全沒反應，而那正是最需要它的地方（全文搜尋結果又長又是純文字）。
+         */
+        case ",": this.pending = ","; this.render(); break;
         case "r": this.pending = "r"; this.render(); break;
         case "?": this.showHelp = !this.showHelp; this.render(); break;
         case "h": case "q": this.backToFiles(); break;
@@ -3240,6 +3329,7 @@ class YaziModal extends Modal {
       else if (key === "d") this.openSearch("dir");
       else if (key === "o") this.openOutline();
       else if (key === "r") this.openRelations();
+      else if (key === "v") this.openList("views");
       // 背景開新分頁原本是 gf（Surfingkeys 的 gf），gf 讓給「搜檔名」之後搬到 gb
       else if (key === "b") this.enter("tab-bg");
       else this.render();
@@ -3255,8 +3345,6 @@ class YaziModal extends Modal {
       if (key === "x") this.closeActiveTab();
       else if (key === "X") this.undoCloseTab();
       else if (key === "p") this.toggleRenderMd();
-      else if (key === "v") this.openList("views");
-      else if (key === "s") this.saveCurrentView();
       else this.render();
       return;
     }
@@ -3298,6 +3386,13 @@ class YaziModal extends Modal {
 
       // 說明頁直接吃掉三欄 —— 按鍵那麼多，擠在一欄要捲很久才找得到
       if (this.showHelp) {
+        this.colsEl.show();
+        // 搜尋說明時輸入列要搬回底部那一列（組合卡可能把它借走了）
+        if (this.inputWrapEl.parentElement !== this.barRowEl) {
+          this.barRowEl.insertBefore(this.inputWrapEl, this.hintEl);
+        }
+        this.composerEl.hide();
+        this.barEl.show();
         this.renderHelp();
         this.renderBar();
         return;
@@ -3673,7 +3768,9 @@ class YaziModal extends Modal {
             ["t", this.t("legend.newTab", "open in a new tab")],
             ["/", this.t("legend.refine", "filter within these results")],
             ["i / Tab", this.t(this.searchKind === "dir" ? "legend.editQuery" : "legend.editQueryCond")],
-            ["o", this.t("legend.sort", "sort")],
+            // 存成檢視就在這裡揭露 —— 這是唯一能存的畫面，圖例沒寫等於沒人找得到
+            ["s", this.t("legend.saveView", "save this search as a view (gv lists them)")],
+            ["S", this.t("legend.sort", "sort")],
           ]
         : this.view === "tabs"
         ? [["Enter / l / o", this.t("legend.switchTab", "switch to it")],
@@ -3697,11 +3794,11 @@ class YaziModal extends Modal {
         : this.view === "views"
         ? [
             ["Enter / l / o", this.t("legend.viewRun", "run this search again")],
-            ["e", this.t("legend.viewEdit", "edit its conditions, then ,s saves over the same name")],
+            ["e", this.t("legend.viewEdit", "edit its conditions, then s saves over the same name")],
             ["m + " + this.t("ui.letter", "letter"), this.t("legend.assignLetter", "assign a letter (m + Backspace clears it)")],
             [this.t("ui.letter", "letter"), this.t("legend.viewLetter", "run that view straight away")],
             ["x", this.t("legend.viewDelete", "delete the view")],
-            [",s", this.t("legend.viewSave", "in search results: save the current search as a view")],
+            ["s", this.t("legend.viewSave", "in search results: save the current search as a view")],
           ]
         : this.view === "relations"
         ? [
@@ -3851,10 +3948,16 @@ class YaziModal extends Modal {
       c.empty();
       return c.createDiv({ cls: "yazi-help" });
     });
-    boxes[0].createDiv({ cls: "yazi-help-title", text: this.t("ui.helpTitle", "Keys · Esc or ? to close") });
+    const q = (this.helpFilter || "").trim().toLowerCase();
+    boxes[0].createDiv({
+      cls: "yazi-help-title",
+      text: q
+        ? this.t("ui.helpTitleFiltered", "Keys · “{q}” · Esc clears", { q: this.helpFilter })
+        : this.t("ui.helpTitle", "Keys · / to search · Esc or ? to close"),
+    });
 
     /* HELP 的每一列是 [鍵位, i18n key]；只有一個元素的是區塊標題（見 HELP 常數） */
-    const groups = [];
+    let groups = [];
     let cur = null;
     for (const row of HELP) {
       if (row.length === 1) {
@@ -3867,6 +3970,26 @@ class YaziModal extends Modal {
         groups.push(cur);
       }
       cur.rows.push([row[0], this.t(row[1])]);
+    }
+
+    /*
+     * 過濾：鍵位與說明任一命中就留。**段落標題本身也算命中**（打 "書籤" 想看的是
+     * 整個書籤段落，不是剛好描述裡有這兩個字的那一列），命中標題就整段留著。
+     * 全部過濾掉時不要留三個空欄 —— 明講找不到，比讓人以為壞了好。
+     */
+    if (q) {
+      groups = groups
+        .map((g) => {
+          if (g.head && g.head.toLowerCase().includes(q)) return g;
+          const rows = g.rows.filter(([k, d]) =>
+            String(k).toLowerCase().includes(q) || String(d).toLowerCase().includes(q));
+          return rows.length ? { head: g.head, rows } : null;
+        })
+        .filter(Boolean);
+      if (!groups.length) {
+        boxes[0].createDiv({ cls: "yazi-empty", text: this.t("ui.helpNoMatch", "Nothing matches “{q}”", { q: this.helpFilter }) });
+        return;
+      }
     }
 
     const weight = (g) => g.rows.length + 1.5;   // 段落標題本身也佔高度
@@ -3883,11 +4006,34 @@ class YaziModal extends Modal {
       if (g.head) box.createDiv({ cls: "yazi-help-section", text: g.head.replace(/^— | —$/g, "") });
       for (const [k, desc] of g.rows) {
         const row = box.createDiv({ cls: "yazi-help-row" });
-        row.createSpan({ cls: "yazi-help-key", text: k });
-        row.createSpan({ cls: "yazi-help-desc", text: desc });
+        this.hilite(row.createSpan({ cls: "yazi-help-key" }), k, q);
+        this.hilite(row.createSpan({ cls: "yazi-help-desc" }), desc, q);
       }
       used += w;
     }
+  }
+
+  /*
+   * 把 text 寫進 el，命中的片段包成 <mark>。
+   * 用 createSpan 一段一段建，不是塞 innerHTML —— 說明文字裡有 < > &（例如 <Space>），
+   * 而且走 innerHTML 等於把使用者輸入的關鍵字當標記解析。
+   */
+  hilite(el, text, q) {
+    const s = String(text);
+    if (!q) {
+      el.setText(s);
+      return;
+    }
+    const hay = s.toLowerCase();
+    let i = 0;
+    for (;;) {
+      const at = hay.indexOf(q, i);
+      if (at < 0) break;
+      if (at > i) el.createSpan({ text: s.slice(i, at) });
+      el.createEl("mark", { cls: "yazi-hit", text: s.slice(at, at + q.length) });
+      i = at + q.length;
+    }
+    if (i < s.length) el.createSpan({ text: s.slice(i) });
   }
 
   renderPreview() {
@@ -4065,11 +4211,27 @@ class YaziModal extends Modal {
         placeholder.remove();                    // 渲染完成才拿掉純文字，中間不留空窗
         if (this.view === "outline") this.followOutline();   // 版面換了，標題的位置也換了
       };
-      if (render && typeof render.then === "function") render.then(done, done);
+      /*
+       * ⚠️ 失敗要走**另一條**路。原本兩邊都接 done()，於是渲染失敗時純文字被拿掉、
+       *    只留下一個空盒子 —— 畫面上看起來就是「開了渲染卻什麼都沒有」，而且無聲。
+       *    失敗時要保留純文字，並在上面標一行，讓人知道是渲染壞了而不是檔案是空的。
+       */
+      if (render && typeof render.then === "function") render.then(done, (e) => this.previewRenderFailed(comp, box, e));
       else done();
     } catch (e) {
-      console.error(e);
-      box.remove();   // 渲染失敗就維持純文字，不要變成空白
+      this.previewRenderFailed(comp, box, e);
+    }
+  }
+
+  /* 渲染失敗：收掉空盒子、留住純文字，並在最上面標一行（無聲降級最難查）。 */
+  previewRenderFailed(comp, box, e) {
+    console.error("[yazi-explorer] markdown render failed", e);
+    if (this.previewComp !== comp) return;   // 已經被下一次渲染換掉了，不要動畫面
+    box.remove();
+    const el = this.previewEl;
+    if (el && !el.querySelector(".yazi-preview-warn")) {
+      const warn = el.createDiv({ cls: "yazi-preview-warn", text: this.t("ui.renderFallback", "Could not render this note — showing plain text") });
+      el.insertBefore(warn, el.firstChild);
     }
   }
 
@@ -4308,6 +4470,11 @@ class YaziModal extends Modal {
       this.pathEl.setText(item ? (item.sub || item.label) : "");
     }
 
+    if (this.mode === "confirm" && this.confirmAsk) {
+      this.hintEl.setText(this.confirmAsk.message + this.t("confirm.yes", "  y = confirm, any other key cancels"));
+      this.hintEl.addClass("is-warn");
+      return;
+    }
     if (this.mode === "confirm" && this.confirmTarget) {
       const n = (this.confirmTargets || []).length;
       this.hintEl.setText(
@@ -4799,6 +4966,16 @@ module.exports = class YaziExplorer extends Plugin {
       id: "open-views",
       name: this.t("cmd.openViews", "Open saved views"),
       callback: () => this.openExplorer("views"),
+    });
+    this.addCommand({
+      id: "open-outline",
+      name: this.t("cmd.openOutline", "Open outline of the current note"),
+      callback: () => this.openExplorer("outline"),
+    });
+    this.addCommand({
+      id: "open-relations",
+      name: this.t("cmd.openRelations", "Open relations of the current note"),
+      callback: () => this.openExplorer("relations"),
     });
 
     /*

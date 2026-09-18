@@ -60,14 +60,29 @@ const mk = (over) => Object.assign(Object.create(YaziModal.prototype), {
   collectTabs: () => [],
 }, over);
 
-/* ── 1. ,v 開清單、,s 存檔 ── */
+/* ── 1. gv 開清單（檔案檢視）、s 存檔（只在搜尋結果） ── */
 const log = [];
-const k = mk({ openList: (v) => log.push("list:" + v), saveCurrentView: () => log.push("save") });
-k.handleKey(ev(",")); k.handleKey(ev("v"));
-k.handleKey(ev(",")); k.handleKey(ev("s"));
-eq(",v 開檢視清單、,s 儲存", log, ["list:views", "save"]);
+const k = mk({ openList: (v) => log.push("list:" + v) });
+k.handleKey(ev("g")); k.handleKey(ev("v"));
+eq("gv 開檢視清單", log, ["list:views"]);
 
-/* ── 2. ,s 存下來的內容 ── */
+log.length = 0;
+const sv = mk({ view: "search", saveCurrentView: () => log.push("save") });
+sv.handleKey(ev("s"));
+eq("搜尋結果裡 s ＝儲存", log, ["save"]);
+
+log.length = 0;
+const sb = mk({ view: "bookmarks", saveCurrentView: () => log.push("save") });
+sb.handleKey(ev("s"));
+eq("其他清單的 s 不做事（沒有條件可存）", log, []);
+
+/* , 前綴在清單檢視裡要接得到（原本整個沒接，,p 在搜尋結果按了沒反應） */
+log.length = 0;
+const cm = mk({ view: "search", toggleRenderMd: () => log.push("togglemd") });
+cm.handleKey(ev(",")); cm.handleKey(ev("p"));
+eq("搜尋結果裡 ,p 切換渲染預覽", log, ["togglemd"]);
+
+/* ── 2. s 存下來的內容（先過 y/n 確認，再問名字） ── */
 let prompted = null;
 const s = mk({
   view: "search", searchKind: "text", searchQuery: "報表",
@@ -76,6 +91,11 @@ const s = mk({
   promptFor: (label, initial, cb) => { prompted = { label, initial }; return cb("進行中的 P0"); },
 });
 s.saveCurrentView();
+eq("s 先問 y/n，還沒存", [s.mode, s.plugin.views().length], ["confirm", 0]);
+s.handleKey(ev("n"));
+eq("按 n 就取消，什麼都沒存", [s.mode, s.plugin.views().length], ["nav", 0]);
+s.saveCurrentView();
+s.handleKey(ev("y"));
 const saved = s.plugin.views()[0];
 eq("預設名稱用關鍵字帶出來", prompted.initial, "報表");
 eq("存下種類、關鍵字、條件、範圍",
@@ -92,10 +112,10 @@ eq("檔案檢視按 ,s：提示而不是存下空的檢視", [nf.plugin.views().
 
 /* 同名＝覆寫，並保留原本的快捷字母 */
 const ov = mk({ view: "search", searchQuery: "新的", facets: [], promptFor: (l, i, cb) => cb("我的檢視") });
-ov.saveCurrentView();
+ov.saveCurrentView(); ov.handleKey(ev("y"));
 ov.plugin.views()[0].key = "q";
 ov.searchQuery = "改過的";
-ov.saveCurrentView();
+ov.saveCurrentView(); ov.handleKey(ev("y"));
 eq("同名覆寫，不會變成兩筆", ov.plugin.views().length, 1);
 eq("覆寫後關鍵字更新、快捷字母留著", [ov.plugin.views()[0].query, ov.plugin.views()[0].key], ["改過的", "q"]);
 
