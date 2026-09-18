@@ -23,6 +23,7 @@ const SECTIONS = [
   { id: "openers", icon: "🚀", labelKey: "settings.section.openers" },
   { id: "decorations", icon: "🎨", labelKey: "settings.section.decorations" },
   { id: "search", icon: "🔍", labelKey: "settings.section.search" },
+  { id: "links", icon: "🔗", labelKey: "settings.section.links" },
   { id: "preview", icon: "👁", labelKey: "settings.section.preview" },
   { id: "index", icon: "🗂", labelKey: "settings.section.index" },
 ];
@@ -173,6 +174,7 @@ class YaziSettingTab extends PluginSettingTab {
       openers: () => this.renderOpeners(el),
       decorations: () => this.renderDecorations(el),
       search: () => this.renderSearch(el),
+      links: () => this.renderLinks(el),
       preview: () => this.renderPreview(el),
       index: () => this.renderIndex(el),
     }[this.section];
@@ -794,6 +796,176 @@ class YaziSettingTab extends PluginSettingTab {
       s.facets.push({ id: uid(), key: "", icon: "🔖", label: "New field", kind: "fm", field: "", enabled: true });
       await this.commit();
     };
+  }
+
+  /*
+   * 關聯規則與儲存的檢視放同一頁：兩者都在回答「怎麼從一則筆記走到一組筆記」。
+   *
+   * 檢視刻意**不做編輯器**，只列出來與刪除 —— 一個檢視是在搜尋畫面上按 Tab 加條件、
+   * 看著筆數組出來的，回到表單裡重填一次條件是在沒有回饋的情況下猜。要改就在
+   * 瀏覽器裡重組一次，用同一個名字存回去（同名＝覆寫）。
+   */
+  renderLinks(el) {
+    const s = this.plugin.settings;
+
+    this.header(el, this.t("settings.links.relTitle", "Relation fields"),
+      this.t("settings.links.relDesc",
+        "Which frontmatter fields gr treats as relations. Only the forward direction is stored: " +
+        "\"Children\" is worked out by finding every note whose parent points here, so the two " +
+        "sides can never disagree."),
+      {
+        onExport: () => s.relations,
+        onImport: async (parsed) => {
+          if (!Array.isArray(parsed)) { new Notice("Expected a JSON array"); return; }
+          s.relations = parsed;
+          await this.commit();
+        },
+        onReset: async () => { s.relations = defaultSettings().relations; await this.commit(); },
+      });
+
+    const rel = el.createDiv({ cls: "yazi-set-list" });
+    (s.relations || []).forEach((r, i) => this.relationCard(rel, r, i));
+
+    const addRel = el.createDiv({ cls: "yazi-set-add" });
+    const br = addRel.createEl("button", { text: "+ " + this.t("settings.links.addRel", "Relation field") });
+    br.onclick = async () => {
+      s.relations = (s.relations || []).concat([{ id: uid(), enabled: true, field: "", label: "", inverse: "" }]);
+      await this.commit();
+    };
+
+    const views = this.plugin.views();
+    this.header(el, this.t("settings.links.viewTitle", "Saved views"),
+      this.t("settings.links.viewDesc",
+        "Searches you kept. A view stores the words, conditions and scope — not the results — so it " +
+        "is re-run every time. Make one in the explorer: run a search, then press ,v. Saving over an " +
+        "existing name replaces it."),
+      views.length ? { onExport: () => views } : null);
+
+    if (!views.length) {
+      el.createDiv({ cls: "yazi-set-empty",
+        text: this.t("settings.links.noViews", "Nothing saved yet. Press gv in the explorer to see this list there.") });
+      return;
+    }
+    const vlist = el.createDiv({ cls: "yazi-set-list" });
+    for (const v of views) this.viewCard(vlist, v);
+  }
+
+  /*
+   * 一張檢視卡。名稱、快捷字母、關鍵字、範圍都能改；**條件只能刪不能加** ——
+   * 候選值是從 vault 讀出來的（帶筆數），在這裡手打欄位名與值等於在沒有回饋的
+   * 情況下猜有沒有拼對。要加條件就在瀏覽器裡按 ,v 選到它、e 載回搜尋卡，
+   * 用 Tab 從選單挑，改完 ,s 存回同一個名字。
+   */
+  viewCard(list, v) {
+    const card = new RuleCard(list, {
+      title: v.name,
+      subtitle: this.viewSummary(v),
+      badge: v.key || "—",
+      onDelete: async () => {
+        await this.plugin.removeView(v.id);
+        this.renderSection();
+      },
+    });
+
+    new Setting(card.body)
+      .setName(this.t("settings.links.viewName", "Name"))
+      .addText((t) => t.setValue(v.name || "").onChange(async (x) => { v.name = x.trim(); await this.save(); }));
+
+    new Setting(card.body)
+      .setName(this.t("settings.links.viewKey", "Shortcut letter"))
+      .setDesc(this.t("settings.links.viewKeyDesc", "Press this letter in the view list (,v) to run it straight away."))
+      .addText((t) => {
+        t.setValue(v.key || "");
+        t.inputEl.maxLength = 1;
+        t.onChange(async (x) => {
+          const k = (x || "").trim().slice(0, 1);
+          // 搶字母的語意與瀏覽器裡一致：同一個字母只能屬於一個檢視
+          await this.plugin.assignViewKey(v.id, /^[a-zA-Z0-9]$/.test(k) ? k : null);
+        });
+      });
+
+    new Setting(card.body)
+      .setName(this.t("settings.links.viewQuery", "Words"))
+      .setDesc(this.t("settings.links.viewQueryDesc", "What gets typed into the search box. May be empty when the conditions do the work."))
+      .addText((t) => t.setValue(v.query || "").onChange(async (x) => { v.query = x; await this.save(); }));
+
+    new Setting(card.body)
+      .setName(this.t("settings.links.viewScope", "Folder"))
+      .setDesc(this.t("settings.links.viewScopeDesc", "Vault-relative path to search inside. Empty means the whole vault."))
+      .addText((t) => t.setValue(v.scopePath || "").onChange(async (x) => { v.scopePath = x.trim(); await this.save(); }));
+
+    const facets = v.facets || [];
+    const box = card.body.createDiv({ cls: "yazi-set-chips" });
+    box.createSpan({ cls: "yazi-set-chips-label", text: this.t("settings.links.viewFacets", "Conditions") });
+    if (!facets.length) {
+      box.createSpan({ cls: "yazi-set-chip is-empty", text: this.t("settings.links.viewNoFacets", "none") });
+    }
+    facets.forEach((f, i) => {
+      const chip = box.createSpan({ cls: "yazi-set-chip", text: f.id + (f.value ? ": " + f.value : "") });
+      const x = chip.createEl("button", { text: "✕" });
+      x.title = this.t("settings.links.viewDropFacet", "Remove this condition");
+      x.onclick = async () => {
+        facets.splice(i, 1);
+        await this.commit();
+      };
+    });
+    box.createDiv({ cls: "yazi-set-desc",
+      text: this.t("settings.links.viewAddFacetHint",
+        "To add a condition, open the view list with ,v, press e to load it back into the search card, " +
+        "pick conditions with Tab, then press ,s to save it under the same name.") });
+  }
+
+  // 檢視摘要。跟瀏覽器裡那份是同一個意思，但這裡不依賴 modal 的狀態
+  viewSummary(v) {
+    const kind = { text: this.t("ui.kindText", "full text"), dir: this.t("ui.kindDir", "folders") }[v.kind]
+      || this.t("ui.kindFile", "file names");
+    const bits = [];
+    if (v.query) bits.push('"' + v.query + '"');
+    for (const f of v.facets || []) bits.push(f.id + (f.value ? ": " + f.value : ""));
+    if (v.scopePath) bits.push(this.t("ui.inFolder", "in {path}", { path: v.scopePath }));
+    return kind + (bits.length ? " · " + bits.join(" · ") : "");
+  }
+
+  relationCard(list, r, i) {
+    const s = this.plugin.settings;
+    const card = new RuleCard(list, {
+      title: r.label || r.field || this.t("settings.links.newRel", "New relation"),
+      subtitle: r.field
+        ? (r.symmetric ? this.t("settings.links.symmetric", "symmetric") : r.inverse ? "→ " + r.inverse : "")
+        : "",
+      badge: r.field || "—",
+      enabled: r.enabled,
+      onToggle: async (v) => { r.enabled = v; await this.commit(); },
+      onDelete: async () => { s.relations.splice(i, 1); await this.commit(); },
+      onMove: async (d) => {
+        const j = i + d;
+        if (j < 0 || j >= s.relations.length) return;
+        s.relations.splice(j, 0, s.relations.splice(i, 1)[0]);
+        await this.commit();
+      },
+    });
+
+    new Setting(card.body)
+      .setName(this.t("settings.links.field", "Frontmatter field"))
+      .setDesc(this.t("settings.links.fieldDesc", "The key to read, e.g. parent. Values may be [[wikilinks]] or a list of them."))
+      .addText((t) => t.setValue(r.field || "").onChange(async (v) => { r.field = v.trim(); await this.commit(false); }));
+
+    new Setting(card.body)
+      .setName(this.t("settings.links.label", "Group heading"))
+      .setDesc(this.t("settings.links.labelDesc", "Shown above the notes this field points at."))
+      .addText((t) => t.setValue(r.label || "").onChange(async (v) => { r.label = v.trim(); await this.commit(false); }));
+
+    new Setting(card.body)
+      .setName(this.t("settings.links.symmetricName", "Symmetric"))
+      .setDesc(this.t("settings.links.symmetricDesc", "The relation works both ways, so both notes list each other under one heading. Use this for \"related\"."))
+      .addToggle((t) => t.setValue(!!r.symmetric).onChange(async (v) => { r.symmetric = v; await this.commit(); }));
+
+    if (!r.symmetric) {
+      new Setting(card.body)
+        .setName(this.t("settings.links.inverse", "Reverse heading"))
+        .setDesc(this.t("settings.links.inverseDesc", "Heading for notes pointing here, e.g. Children. Leave empty to skip the reverse lookup."))
+        .addText((t) => t.setValue(r.inverse || "").onChange(async (v) => { r.inverse = v.trim(); await this.commit(false); }));
+    }
   }
 
   facetCard(list, f, i) {

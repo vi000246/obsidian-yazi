@@ -27,8 +27,11 @@ const mismatched = Object.keys(zhTW)
   .filter((k) => JSON.stringify(vars(en[k])) !== JSON.stringify(vars(zhTW[k])));
 eq("各語言的佔位字一致", mismatched, []);
 
-/* 3. 程式碼裡用到的 key 都要存在於英文檔 —— 漏一個就會在介面上印出 key 名稱 */
-const src = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+/* 3. 程式碼裡用到的 key 都要存在於英文檔 —— 漏一個就會在介面上印出 key 名稱。
+      設定頁也要掃：它的 t() 呼叫跟 main.js 一樣多，漏掉同樣會印出 key。 */
+const src = ["main.js", "settings/tab.js"]
+  .map((f) => fs.readFileSync(path.join(__dirname, "..", "src", f), "utf8"))
+  .join("\n");
 const used = new Set();
 for (const m of src.matchAll(/\bt\(\s*"([\w.]+)"/g)) used.add(m[1]);
 for (const m of src.matchAll(/\["(help\.[\w.]+)"\]/g)) used.add(m[1]);

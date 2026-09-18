@@ -38,7 +38,7 @@ function probePath() {
     new RegExp("(^|\\n)\\s*(const|let|function|class)\\s+" + n + "\\b").test(src));
   /* 模組層的兩個狀態（app 與裝飾規則）要能從測試裡設定 —— 平常是 onload 灌進去的 */
   const tail = "\nmodule.exports.__test = { " + names.join(", ") +
-    ", setFmApp: (a) => { FM_APP = a; }, setFmRules: (r) => { FM_RULES = r || []; } };\n";
+    ", setFacets: (f) => setFacets(f), setFmApp: (a) => { FM_APP = a; }, setFmRules: (r) => { FM_RULES = r || []; } };\n";
   /* ⚠️ 一定要產在 src/ 旁邊，不能丟到暫存目錄：main.js 裡的 require("./settings/…")
      是相對路徑，探針放在別的資料夾時那些 require 會全部解析不到。
      檔名以 . 開頭並列進 .gitignore。 */

@@ -132,11 +132,56 @@ Which fields count as relations is configurable; out of the box:
 | field | group | reverse group |
 |---|---|---|
 | `parent` | Parent | Children |
-| `up` | Up | Down | 
+| `up` | Up | Down |
 | `related` | Related | *(symmetric — shown on both notes)* |
+| `blocks` | Blocks | Blocked by |
 
 `up` is the [LYT](https://notes.linkingyourthinking.com/) convention: it points at the map-of-content
-note this one belongs under. If you don't use it, the group simply never appears.
+note this one belongs under. A field you don't use simply never produces a group, and you can add,
+rename or disable fields under **Settings → Relations & views**.
+
+Values should be `[[wikilinks]]`, or a list of them:
+
+```yaml
+---
+parent: "[[Roadmap 2026]]"
+related:
+  - "[[Prior art — other explorers]]"
+  - "[[Keyboard-first tools]]"
+---
+```
+
+Plain text that names a file is understood as a fallback, but wikilinks are what make Obsidian's
+rename tracking, backlinks and graph work.
+
+> **Seeing only Links and Backlinks?** Then none of your notes carry these frontmatter fields yet —
+> `gr` still works, it is just showing the untyped links it found. Relations are read from
+> frontmatter, not from a `## Related` section in the body.
+
+### Saved views
+
+A search you want back tomorrow can be kept. Run it, then press `,s` and give it a name. `,v` lists
+what you saved:
+
+```
+w  In progress, mine     file names · status: 3 In Progress · priority: P1 High
+r  Read later            full text · "reading" · in 400 QuickNote
+·  Blocked               file names · blocked
+```
+
+A view stores the **words, conditions and scope — not the results**, so it is re-run every time and
+always reflects the vault as it is now. In the list, `Enter` runs one, `e` loads it back into the
+search card so you can change its conditions (`,s` under the same name then replaces it), `x`
+deletes it, and `m` plus a letter assigns a shortcut — after which that letter runs it straight from
+the list.
+
+`,v` is also the command **Open saved views**, so you can bind it under Obsidian's own hotkeys and
+land in the list from anywhere.
+
+Views are editable under **Settings → Relations & views** too — name, letter, words, folder, and
+removing conditions. *Adding* a condition is deliberately only possible in the explorer: there the
+candidate values are read from your vault and come with counts, so you can see that a value actually
+exists rather than typing one and hoping.
 
 ### Working with files
 
@@ -315,6 +360,7 @@ doing nothing.
 | **Clipboard** | `y` `x` `p` `P` `Y` `X` |
 | **Files** | `a` `A` `R` `D` `c`(`cc` `cd` `cf` `cn` `cr`) |
 | **Sort** | `S`(then a sort key) |
+| **Views** | `,`(`,v` `,s`) |
 | **Preview** | `J` `K` `PageDown` `PageUp` `,`(`,x` `,X` `,p`) |
 | **Other** | `/` `?` `q` |
 

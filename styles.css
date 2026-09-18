@@ -1127,6 +1127,58 @@ input.yazi-input {
   margin-top: 10px;
 }
 
+/* 檢視卡裡的條件 chip。只能刪不能加（加條件要回瀏覽器，見 viewCard 的說明） */
+.yazi-set-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0 4px;
+}
+
+.yazi-set-chips-label {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+
+.yazi-set-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 10px;
+  background: var(--background-modifier-hover);
+  font-size: 0.85em;
+}
+
+.yazi-set-chip.is-empty {
+  padding-right: 8px;
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.yazi-set-chip button {
+  padding: 0 4px;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 0.9em;
+  line-height: 1;
+}
+
+.yazi-set-chip button:hover {
+  color: var(--text-error);
+}
+
+.yazi-set-chips + .yazi-set-desc,
+.yazi-set-chips .yazi-set-desc {
+  flex-basis: 100%;
+  margin-top: 4px;
+}
+
 .yazi-set-empty {
   padding: 18px;
   text-align: center;

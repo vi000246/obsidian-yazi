@@ -204,12 +204,18 @@ const EXAMPLE_DECORATIONS = [
  *   parent   任務／筆記的上一層（Obsidian Tasks、專案管理那類用法）
  *   up       這則筆記歸在哪個主題底下（LYT / MOC 那派的慣例，指向索引頁）
  *   related  對稱的「有關」，兩邊都看得到
+ *   blocks   「這張沒做完，那些就不能開始」（Linear / Jira 的用法）
  * 用不到的把 enabled 關掉即可；欄位名不合自己的習慣就直接改 field。
+ *
+ * ⚠️ 這些值要是 [[wikilink]]（或 wikilink 清單）。純文字的 id 也認得出來（會拿去
+ *    比對檔名開頭），但那是**退路**不是建議寫法 —— wikilink 才能讓 Obsidian 的
+ *    改名追蹤、反向連結、關係圖一起生效。
  */
 const DEFAULT_RELATIONS = [
   { id: "parent", enabled: true, field: "parent", label: "Parent", inverse: "Children" },
   { id: "up", enabled: true, field: "up", label: "Up", inverse: "Down" },
   { id: "related", enabled: true, field: "related", label: "Related", symmetric: true },
+  { id: "blocks", enabled: true, field: "blocks", label: "Blocks", inverse: "Blocked by" },
 ];
 
 const DEFAULT_FACETS = [
@@ -235,6 +241,13 @@ const DEFAULT_SETTINGS = {
   decorations: DEFAULT_DECORATIONS,
   facets: DEFAULT_FACETS,
   relations: DEFAULT_RELATIONS,
+
+  /*
+   * 儲存的檢視（gv）。刻意是空的：一個檢視存的是**條件**（status 是什麼、tag 是什麼），
+   * 而那些值只在寫它的人自己的 vault 裡有意義 —— 預載別人的詞彙表只會得到一排永遠
+   * 0 筆的檢視。做法是自己組一次搜尋、滿意了再按 ,v 存起來。
+   */
+  views: [],
 
   preview: {
     /* markdown 渲染成閱讀檢視的樣子。關掉就是純文字。 */

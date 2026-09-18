@@ -395,6 +395,10 @@ const HELP = [
   ["go", "help.list.go"],
   ["gr", "help.list.gr"],
   ["(relations) Enter / l", "help.list.grJump"],
+  [",v", "help.list.gv"],
+  [",s", "help.list.vsave"],
+  ["(views) e", "help.list.vedit"],
+  ["(views) m + letter", "help.list.vassign"],
   ["(in a list) x", "help.list.x"],
   ["(in a list) q / Esc", "help.list.back"],
   ["help.sec.bookmarks"],
@@ -457,10 +461,12 @@ const PENDING_MENUS = {
   },
   ",": {
     descKey: "menu.comma.desc",
-    items: [["x", "menu.comma.x"], ["X", "menu.comma.X"], ["p", "menu.comma.p"]],
+    items: [["x", "menu.comma.x"], ["X", "menu.comma.X"], ["p", "menu.comma.p"],
+            ["v", "menu.comma.v"], ["s", "menu.comma.s"]],
   },
   r: { descKey: "menu.r.desc", items: [["f", "menu.r.f"]] },
   assign: { key: "m", descKey: "menu.assign.desc", noteKey: "menu.assign.note" },
+  vassign: { key: "m", descKey: "menu.vassign.desc", noteKey: "menu.assign.note" },
   "'": { descKey: "menu.quote.desc", noteKey: "menu.quote.note" },
 };
 
@@ -956,39 +962,48 @@ class YaziModal extends Modal {
     this.inputWrapEl.show();
     this.inputEl.focus();
 
-    // 全文索引第一次用到才建。建的時候先把畫面切過去並標示進度，不要讓人對著
-    // 空白等 —— 幾千個檔第一次讀進來要一兩秒。
-    if (kind === "text" && this.plugin && !this.plugin.textIndex) {
-      this.indexing = true;
-      this.render();
-      this.plugin.ensureTextIndex().then(
-        () => {
-          const st = this.plugin.textIndexStats;
-          if (st) {
-            const how = st.fromCache
-              ? this.t("notice.indexCached", "loaded {loaded} from cache, re-read {reread}", { loaded: st.loaded, reread: st.reread })
-              : this.t("notice.indexFirst", "built {files} entries", { files: st.files });
-            new Notice(
-              this.t("notice.indexDone", "Full-text index: {how} · {files} files, {sec}s",
-            { how, files: st.files, sec: (st.ms / 1000).toFixed(1) })
-            );
-          }
-          if (this.view !== "search" || this.searchKind !== "text") return;
-          this.indexing = false;
-          this.buildSearchList();
-          this.render();
-        },
-        (e) => {
-          this.indexing = false;
-          new Notice(this.t("notice.indexFailed", "Could not build the full-text index: {error}", { error: msg(e) }));
-          this.render();
-        }
-      );
-      return;
-    }
+    // 全文索引第一次用到才建；建的期間畫面已經切過去並標示進度（見 ensureIndex）
+    if (this.ensureIndex(kind)) return;
 
     this.buildSearchList();
     this.render();
+  }
+
+  /*
+   * 全文索引第一次用到才建。建的時候先把畫面切過去並標示進度，不要讓人對著空白等
+   * —— 幾千個檔第一次讀進來要一兩秒。
+   *
+   * 回傳 true ＝「已經接手了」：畫面畫過了、結果會在索引好之後補上，呼叫端不要再畫一次。
+   * openSearch 與 runView（儲存的檢視）共用這條路，否則從檢視開全文搜尋會是一片空白。
+   */
+  ensureIndex(kind) {
+    if (kind !== "text" || !this.plugin || this.plugin.textIndex) return false;
+    this.indexing = true;
+    this.render();
+    this.plugin.ensureTextIndex().then(
+      () => {
+        const st = this.plugin.textIndexStats;
+        if (st) {
+          const how = st.fromCache
+            ? this.t("notice.indexCached", "loaded {loaded} from cache, re-read {reread}", { loaded: st.loaded, reread: st.reread })
+            : this.t("notice.indexFirst", "built {files} entries", { files: st.files });
+          new Notice(
+            this.t("notice.indexDone", "Full-text index: {how} · {files} files, {sec}s",
+          { how, files: st.files, sec: (st.ms / 1000).toFixed(1) })
+          );
+        }
+        if (this.view !== "search" || this.searchKind !== "text") return;
+        this.indexing = false;
+        this.buildSearchList();
+        this.render();
+      },
+      (e) => {
+        this.indexing = false;
+        new Notice(this.t("notice.indexFailed", "Could not build the full-text index: {error}", { error: msg(e) }));
+        this.render();
+      }
+    );
+    return true;
   }
 
   /*
@@ -1739,8 +1754,11 @@ class YaziModal extends Modal {
      * 照名稱排之後跟隨機挑 60 筆沒有分別，等於這個檢視消失。
      * 要換角度看就用 / 過濾。
      * 大綱同理：標題的順序就是文章的順序，照名稱排等於把文章打散。
+     * 關聯也是：那份清單的順序**就是分組**（Parent、Children、Related…），
+     * 重排會讓同一組的項目散開，畫出來就變成同一個組標題重複出現好幾次。
      */
-    if (cfg.field !== "natural" && this.view !== "frecency" && this.view !== "outline") {
+    const ordered = this.view === "frecency" || this.view === "outline" || this.view === "relations";
+    if (cfg.field !== "natural" && !ordered) {
       const pairs = arr.map((it) => ({
         it,
         f: it.file || (it.path ? this.app.vault.getAbstractFileByPath(it.path) : null),
@@ -1763,6 +1781,7 @@ class YaziModal extends Modal {
     else if (this.view === "frecency") this.listItems = this.collectFrecency();
     else if (this.view === "outline") this.listItems = this.collectOutline();
     else if (this.view === "relations") this.listItems = this.collectRelationItems();
+    else if (this.view === "views") this.listItems = this.collectViews();
     else this.listItems = [];
     if (this.listIndex >= this.listItems.length) {
       this.listIndex = Math.max(0, this.listItems.length - 1);
@@ -2005,6 +2024,128 @@ class YaziModal extends Modal {
     return out;
   }
 
+  /* ── 儲存的檢視（gv / ,v）──
+   *
+   * 存的是「一張組好的搜尋卡」：種類、關鍵字、條件、範圍。**存條件不存結果** ——
+   * 「我的未完成 P0」要的就是每次打開都重算。
+   *
+   * 入口刻意只在**搜尋結果**畫面：先組一次、看到結果是對的，才決定要不要留下來。
+   * 叫人去設定頁憑空填一張表單，等於要他在沒有回饋的情況下猜條件寫對了沒。
+   */
+  saveCurrentView() {
+    if (this.view !== "search") {
+      new Notice(this.t("notice.viewNeedsSearch", "Run a search first, then save it as a view"));
+      return;
+    }
+    const suggested = this.searchQuery || (this.facets[0] ? this.facetLabel(this.facets[0]) : "");
+    this.promptFor(this.t("prompt.saveView", "Save this search as: "), suggested, async (name) => {
+      const label = (name || "").trim();
+      if (!label) return;
+      const view = {
+        id: "v" + Date.now().toString(36),
+        name: label,
+        key: null,
+        kind: this.searchKind,
+        query: this.searchQuery || "",
+        facets: this.facets.map((f) => ({ id: f.id, value: f.value })),
+        scopePath: this.scopePath || "",
+      };
+      if (!this.plugin) return;
+      const replaced = await this.plugin.saveView(view);
+      new Notice(replaced
+        ? this.t("notice.viewReplaced", "View updated: {name}", { name: label })
+        : this.t("notice.viewSaved", "View saved: {name}　(gv to open it)", { name: label }));
+      this.render();
+    });
+  }
+
+  collectViews() {
+    const rows = this.plugin ? this.plugin.views() : [];
+    return rows.map((v) => {
+      const bits = [];
+      if (v.query) bits.push('"' + v.query + '"');
+      for (const f of v.facets || []) bits.push(this.facetLabel(f));
+      if (v.scopePath) bits.push(this.t("ui.inFolder", "in {path}", { path: v.scopePath }));
+      const kind = { text: this.t("ui.kindText", "full text"), dir: this.t("ui.kindDir", "folders") }[v.kind]
+        || this.t("ui.kindFile", "file names");
+      return {
+        label: (v.key ? v.key : "·") + "　" + v.name,
+        sub: kind + (bits.length ? "　·　" + bits.join("　") : ""),
+        viewDef: v,
+      };
+    });
+  }
+
+  /* 執行一個檢視：把條件灌回搜尋狀態，直接跳結果（不經過組合卡）。 */
+  runView(v) {
+    if (!v) return;
+    this.view = "search";
+    this.searchKind = v.kind || "file";
+    this.searchQuery = v.query || "";
+    // 設定檔可能是手改的，或欄位已經被刪掉 —— 認不得的條件靜靜丟掉，
+    // 不要讓整個檢視變成一個打不開的東西
+    this.facets = (v.facets || []).filter((f) => f && f.id && FACET_BY_ID[f.id]);
+    this.scopePath = v.scopePath || "";
+    this.searchOrigin = this.scopePath;
+    this.composing = false;
+    this.listFilter = "";
+    this.listIndex = 0;
+    this.fvCache = null;
+    this.mode = "nav";
+    this.endInput();
+    if (this.ensureIndex(this.searchKind)) return;
+    this.buildSearchList();
+    this.render();
+  }
+
+  /*
+   * 編輯一個檢視：把它的條件灌回**組合卡**（不是結果），人可以按 Tab 加條件、
+   * Backspace 退條件，改完按 Enter 看結果、再用 ,s 存回同一個名字（同名＝覆寫）。
+   *
+   * 為什麼編輯是「回到組合卡」而不是一張表單：條件的候選值是從 vault 讀出來的
+   * （帶筆數），在表單裡手打欄位名與值，等於在沒有回饋的情況下猜有沒有拼對。
+   */
+  editView(v) {
+    if (!v) return;
+    this.runView(v);
+    if (this.view !== "search") return;   // 索引還在建，runView 已經接手畫面了
+    this.composing = this.searchKind !== "dir";
+    this.mode = "search";
+    this.inputEl.value = this.searchQuery || "";
+    this.inputWrapEl.show();
+    this.refreshSuggest(false);
+    this.inputEl.focus();
+    new Notice(this.t("notice.viewEditing", "Editing “{name}” — save it with ,s under the same name", { name: v.name }));
+    this.render();
+  }
+
+  runViewByKey(key) {
+    const v = this.plugin ? this.plugin.viewByKey(key) : null;
+    if (!v) {
+      new Notice(this.t("notice.noViewFor", "No view assigned to {key}", { key }));
+      return;
+    }
+    this.runView(v);
+  }
+
+  // 檢視清單裡按 m 之後的第二顆鍵：字母/數字＝指定，Backspace/Delete＝清除
+  assignViewKey(key) {
+    const item = this.listCurrent();
+    if (!item || !item.viewDef || !this.plugin) return;
+    const clear = key === "Backspace" || key === "Delete";
+    if (!clear && !/^[a-zA-Z0-9]$/.test(key)) {
+      this.render();
+      return;
+    }
+    this.plugin.assignViewKey(item.viewDef.id, clear ? null : key).then((stolen) => {
+      this.buildList();
+      this.render();
+      if (clear) new Notice(this.t("notice.viewKeyCleared", "Shortcut cleared"));
+      else if (stolen) new Notice(this.t("notice.viewKeyStolen", "{key} now opens {name} (taken from {from})", { key, name: item.viewDef.name, from: stolen }));
+      else new Notice(this.t("notice.viewKeySet", "{key} now opens {name}", { key, name: item.viewDef.name }));
+    });
+  }
+
   listCurrent() {
     return this.listItems[this.listIndex] || null;
   }
@@ -2105,6 +2246,15 @@ class YaziModal extends Modal {
     const item = this.listCurrent();
     if (!item) return;
     if (this.view === "outline" || this.view === "relations") return;   // 這兩種清單沒有「刪掉這一列」的意思
+
+    if (this.view === "views" && item.viewDef && this.plugin) {
+      this.plugin.removeView(item.viewDef.id).then(() => {
+        this.buildList();
+        this.render();
+      });
+      new Notice(this.t("notice.viewRemoved", "View deleted: {name}", { name: item.viewDef.name }));
+      return;
+    }
 
     if (this.view === "tabs") {
       // detach() 就是關分頁。關掉之後重建清單，游標留在同一個索引 = 下一個分頁。
@@ -2942,6 +3092,7 @@ class YaziModal extends Modal {
         // o 在哪裡都是「在 Obsidian 開啟」，所以這裡兩者要分開
         case "l": case "Enter":
           if (this.view === "relations") this.revealRelation();
+          else if (this.view === "views") this.runView((this.listCurrent() || {}).viewDef);
           else this.activateListItem("current");
           break;
         case "o": this.activateListItem("current"); break;
@@ -2981,17 +3132,24 @@ class YaziModal extends Modal {
         case "T": this.openList("tabs"); break;
         case "b": this.openList("bookmarks"); break;
         case "m":
-          // 書籤清單裡的 m ＝「指定快捷字母」，下一顆鍵就是那個字母
+          // 書籤／檢視清單裡的 m ＝「指定快捷字母」，下一顆鍵就是那個字母
           if (this.view === "bookmarks") { this.pending = "assign"; this.render(); }
+          else if (this.view === "views") { this.pending = "vassign"; this.render(); }
+          break;
+        case "e":
+          // 檢視清單裡的 e ＝把這個檢視載回組合卡去改條件（改完 ,s 用同名存回去）
+          if (this.view === "views") this.editView((this.listCurrent() || {}).viewDef);
           break;
         case "r": this.pending = "r"; this.render(); break;
         case "?": this.showHelp = !this.showHelp; this.render(); break;
         case "h": case "q": this.backToFiles(); break;
         case "Escape": this.escapeBack(); break;
         default:
-          // 書籤清單裡直接按該書籤的字母也能跳
+          // 書籤／檢視清單裡直接按該筆的字母也能開
           if (this.view === "bookmarks" && key.length === 1 && this.plugin) {
             if (this.plugin.bookmarkByKey(key)) this.jumpToBookmark(key);
+          } else if (this.view === "views" && key.length === 1 && this.plugin) {
+            if (this.plugin.viewByKey(key)) this.runViewByKey(key);
           }
           break;
       }
@@ -3097,6 +3255,8 @@ class YaziModal extends Modal {
       if (key === "x") this.closeActiveTab();
       else if (key === "X") this.undoCloseTab();
       else if (key === "p") this.toggleRenderMd();
+      else if (key === "v") this.openList("views");
+      else if (key === "s") this.saveCurrentView();
       else this.render();
       return;
     }
@@ -3107,6 +3267,7 @@ class YaziModal extends Modal {
     }
     if (prefix === "sort") { this.applySort(key); return; }
     if (prefix === "assign") { this.assignBookmarkKey(key); return; }
+    if (prefix === "vassign") { this.assignViewKey(key); return; }
     if (prefix === "'") { this.jumpToBookmark(key); return; }
     this.render();
   }
@@ -3483,6 +3644,8 @@ class YaziModal extends Modal {
         ? this.t("ui.titleOutline", "Outline: {name}", { name: this.outlineFile ? this.outlineFile.basename : "" })
         : this.view === "relations"
         ? this.t("ui.titleRelations", "Relations: {name}", { name: this.relFile ? this.relFile.basename : "" })
+        : this.view === "views"
+        ? this.t("ui.titleViews", "Saved views")
         : { tabs: this.t("ui.titleTabs", "Tabs"), bookmarks: this.t("ui.titleBookmarks", "Bookmarks"),
             recent: this.t("ui.titleRecent", "Recent"), frecency: this.t("ui.titleFrecency", "Frequently used") }[
             this.view
@@ -3531,6 +3694,15 @@ class YaziModal extends Modal {
             ["/", this.t("legend.refineShort", "filter within the results")],
             ["（×N）", this.t("legend.frecencyCount", "how often you opened it; ranking is count × time decay")],
           ]
+        : this.view === "views"
+        ? [
+            ["Enter / l / o", this.t("legend.viewRun", "run this search again")],
+            ["e", this.t("legend.viewEdit", "edit its conditions, then ,s saves over the same name")],
+            ["m + " + this.t("ui.letter", "letter"), this.t("legend.assignLetter", "assign a letter (m + Backspace clears it)")],
+            [this.t("ui.letter", "letter"), this.t("legend.viewLetter", "run that view straight away")],
+            ["x", this.t("legend.viewDelete", "delete the view")],
+            [",s", this.t("legend.viewSave", "in search results: save the current search as a view")],
+          ]
         : this.view === "relations"
         ? [
             ["Enter / l", this.t("legend.relJump", "move the cursor there and stay in the explorer")],
@@ -3578,6 +3750,8 @@ class YaziModal extends Modal {
         ? this.t("ui.noHeadings", "(no headings)")
         : this.view === "relations"
         ? this.t("ui.noRelations", "(nothing links to or from this note)")
+        : this.view === "views"
+        ? this.t("ui.noViews", "(no saved views yet — run a search, then press ,s to save it)")
         : this.t("ui.noItems", "(no items)");
       this.mainEl.createDiv({ cls: "yazi-empty", text: hint });
       return;
@@ -3597,7 +3771,11 @@ class YaziModal extends Modal {
       // 跟檔名一樣重要，沒理由只有檔案檢視看得到。
       // 大綱例外：每列是同一個檔的標題，把那個檔的裝飾重複畫在每一列只是噪音。
       const info = item.file && !outline ? fmInfo(item.file) : null;
-      if (outline) row.addClass("is-outline yazi-outline-d" + (item.depth || 0));
+      // ⚠️ 一次一個 class：addClass 走 DOMTokenList.add()，帶空白的字串會直接丟例外
+      if (outline) {
+        row.addClass("is-outline");
+        row.addClass("yazi-outline-d" + (item.depth || 0));
+      }
       if (info && info.dim) row.addClass("is-fm-dim");
       row.createSpan({ cls: "yazi-icon", text: item.active ? "●" : info ? info.icon : "·" });
       const nameEl = row.createSpan({ cls: "yazi-name", text: item.label });
@@ -3611,6 +3789,7 @@ class YaziModal extends Modal {
       row.addEventListener("click", () => {
         this.listIndex = idx;
         if (this.view === "relations") this.revealRelation();
+        else if (this.view === "views") this.runView(item.viewDef);
         else this.activateListItem("current");
       });
     });
@@ -3848,9 +4027,16 @@ class YaziModal extends Modal {
     return this._km;
   }
 
-  /* modal 裡到處都要翻譯，從 plugin 轉一手（plugin 可能是 null —— 測試會這樣建）。 */
+  /*
+   * modal 裡到處都要翻譯，從 plugin 轉一手（plugin 可能是 null —— 測試會這樣建）。
+   * 沒有 plugin 時也要把 {var} 代換掉：不代換的話畫面上會出現字面的 "{path}"，
+   * 那看起來像壞掉的字串而不是「翻譯還沒載好」。
+   */
   t(key, fallback, vars) {
-    return this.plugin && this.plugin.t ? this.plugin.t(key, fallback, vars) : (fallback || key);
+    if (this.plugin && this.plugin.t) return this.plugin.t(key, fallback, vars);
+    const s = fallback || key;
+    if (!vars) return s;
+    return String(s).replace(/\{(\w+)\}/g, (m, name) => (name in vars ? String(vars[name]) : m));
   }
 
   /*
@@ -4609,6 +4795,11 @@ module.exports = class YaziExplorer extends Plugin {
       name: this.t("cmd.openFrecency", "Open frequently used"),
       callback: () => this.openExplorer("frecency"),
     });
+    this.addCommand({
+      id: "open-views",
+      name: this.t("cmd.openViews", "Open saved views"),
+      callback: () => this.openExplorer("views"),
+    });
 
     /*
      * 常用紀錄：開檔就記一筆。用 workspace 的 file-open 而不是只在這個瀏覽器裡記，
@@ -4937,6 +5128,53 @@ module.exports = class YaziExplorer extends Plugin {
   setRenderPreview(on) {
     this.settings.preview.renderMarkdown = !!on;
     this.saveData(this.settings);
+  }
+
+  /* ── 儲存的檢視（gv）──
+   *
+   * 一個檢視就是「一張組好的搜尋卡」的快照：種類、關鍵字、條件、範圍。
+   * 存的是條件本身而不是結果，所以 vault 變了它就跟著變 —— 那正是「我的未完成 P0」
+   * 這種檢視要的行為。快捷字母沿用書籤那一套（清單裡 m + 字母指定，再按該字母就開）。
+   */
+  views() {
+    return (this.data && this.data.views) || [];
+  }
+
+  viewByKey(key) {
+    return this.views().find((v) => v.key === key) || null;
+  }
+
+  // 同名視為「覆寫」：組了一次更好的條件想存回同一個名字是常事，
+  // 逼人先刪再存只是多一步。回傳 true 代表蓋掉了既有的。
+  async saveView(view) {
+    const list = this.views();
+    const at = list.findIndex((v) => v.name === view.name);
+    const replaced = at >= 0;
+    if (replaced) view.key = list[at].key;   // 蓋掉時保留原本的快捷字母
+    if (replaced) list[at] = view;
+    else list.push(view);
+    this.data.views = list;
+    await this.saveData(this.data);
+    return replaced;
+  }
+
+  async removeView(id) {
+    this.data.views = this.views().filter((v) => v.id !== id);
+    await this.saveData(this.data);
+  }
+
+  // 搶字母的語意與書籤一致（見 assignBookmarkKey 的說明）
+  async assignViewKey(id, key) {
+    let stolenFrom = null;
+    for (const v of this.views()) {
+      if (key && v.key === key && v.id !== id) {
+        v.key = null;
+        stolenFrom = v.name;
+      }
+      if (v.id === id) v.key = key || null;
+    }
+    await this.saveData(this.data);
+    return stolenFrom;
   }
 
   bookmarks() {
