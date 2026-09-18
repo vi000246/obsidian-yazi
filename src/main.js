@@ -132,6 +132,49 @@ const OUTLINE_PAD = 6;          // 大綱跳到標題時，標題上緣留幾 px
 const LAYER_MAX = 24;
 
 /*
+ * 覆蓋層（overlay）：疊在「目前這個地方」上面的暫時狀態，Esc 一次收一層。
+ *
+ * 這張表是 Esc 行為的**唯一**定義，順序＝由內到外（前面的先收）。每一列只回答兩件事：
+ * 它現在開著嗎（open）、怎麼收（close）。
+ *
+ * 新功能要是會在畫面上疊東西（選單、輸入列、面板…），**加一列在這裡，不要去改
+ * escapeBack()**。過去每加一個旗標就在 escapeBack 多寫一個 if，結果是每個新功能都
+ * 帶來一個「Esc 退錯地方」的 bug；現在漏掉一列的後果只是 Esc 少收一層，不會把人丟去
+ * 沒要求過的地方。
+ *
+ *   ephemeral  進到新的地方（pushLayer）時順手收掉 —— 那是這個地方的臨時狀態，
+ *              不該被帶進下一個地方、也不該存進快照
+ *   leaves     收掉它等於離開這個地方（組合卡：還沒送出就 Esc，沒有結果可以留下來看）
+ */
+const OVERLAYS = [
+  { id: "pending", ephemeral: true,
+    open: (m) => !!m.pending,
+    close: (m) => { m.pending = null; } },
+  // 建議列只在組合卡（mode search）裡才算開著：送出之後殘留的 sug 既不算開、也不會被畫
+  { id: "suggest", ephemeral: true,
+    open: (m) => m.mode === "search" && !!(m.sug || m.sugField),
+    close: (m) => { m.sug = null; m.sugField = null; } },
+  { id: "helpfilter", ephemeral: true,
+    open: (m) => !!m.showHelp && (m.mode === "helpfilter" || !!m.helpFilter),
+    close: (m) => { m.helpFilter = ""; if (m.mode === "helpfilter") m.endInput(); } },
+  { id: "help", ephemeral: true,
+    open: (m) => !!m.showHelp,
+    close: (m) => { m.showHelp = false; } },
+  { id: "composer", leaves: true,
+    open: (m) => m.mode === "search",
+    close: (m) => { m.endInput(); m.leaveSubView(); } },
+  { id: "input",
+    open: (m) => m.mode === "listfilter" || m.mode === "filter" || m.mode === "prompt",
+    close: (m) => m.cancelInput() },
+  { id: "confirm", ephemeral: true,
+    open: (m) => m.mode === "confirm",
+    close: (m) => { m.mode = "nav"; m.confirmTarget = null; m.confirmTargets = null; m.confirmAsk = null; } },
+  { id: "selection",
+    open: (m) => m.view === "files" && m.hasSelection(),
+    close: (m) => m.clearSelection() },
+];
+
+/*
  * 這些前綴的標籤在 UI 裡一律濾掉（搜尋候選、預覽面板都是）。
  *
  * 它們是**筆記系統自動掛上去的**分類標籤，不是人手選的。留著的話它們靠數量穩坐
@@ -513,6 +556,12 @@ class YaziModal extends Modal {
     this.relExpanded = new Set(); // 哪些「一般連結」組被展開了（key ＝ 中心路徑 + 組名）
     this.relCache = null;    // 每個檔的關聯分組，一次開啟期間各算一次（見 relationGroupsFor）
     /*
+     * 從某份清單（書籤、搜尋結果、關聯）跳進 vault 時落地的資料夾路徑。
+     * 在檔案檢視裡，站在落地點按 h ＝退回那份清單（那才是「我從哪來」）；
+     * 往下鑽了之後 h 照舊是上一層資料夾，走回落地點再按 h 才退層。
+     */
+    this.landing = null;
+    /*
      * 層堆疊。Esc／q／h 是「退回上一層」，而「上一層」有很多種：從檔案檢視按 b 進書籤、
      * 從書籤跳進某個資料夾、從檢視清單執行一個搜尋、從搜尋結果按 go 看大綱、
      * 用 gr 沿著關聯一路走 —— 全部都是同一件事。
@@ -867,8 +916,21 @@ class YaziModal extends Modal {
   }
 
   goParent() {
+    /*
+     * 從清單跳進來的那個資料夾是這趟的起點：站在起點按 h 是退回那份清單，
+     * 不是上一層資料夾。從書籤跳進「100 工作」再按 h，要回書籤，不是回 vault 根。
+     * 走回 vault 根也一樣 —— 有上一層就退層，沒有才說「已經在根目錄」。
+     */
+    if (this.layers.length && this.landing && this.cwd && this.cwd.path === this.landing) {
+      this.popLayer();
+      return;
+    }
     const parent = this.cwd.parent;
     if (!parent) {
+      if (this.layers.length) {
+        this.popLayer();
+        return;
+      }
       new Notice(this.t("notice.atVaultRoot", "Already at the vault root"));
       return;
     }
@@ -1592,13 +1654,16 @@ class YaziModal extends Modal {
       relFile: this.relFile, outlineFile: this.outlineFile,
       searchKind: this.searchKind, searchQuery: this.searchQuery,
       facets: (this.facets || []).slice(), scopePath: this.scopePath, searchOrigin: this.searchOrigin,
-      composing: this.composing, cwd: this.cwd, cursorPath: this.cursorPath, filter: this.filter,
+      composing: this.composing, landing: this.landing,
+      cwd: this.cwd, cursorPath: this.cursorPath, filter: this.filter,
     };
   }
 
   pushLayer() {
     // 開場的初始檢視（,b / ,gv 之類）不算「疊上去的一層」—— 它就是最底層
     if (this.opening) return;
+    // 臨時覆蓋層（前綴、建議列、說明頁、確認）屬於離開的這個地方，不帶進下一個、也不存進快照
+    this.closeOverlays();
     this.layers.push(this.snapshot());
     if (this.layers.length > LAYER_MAX) this.layers.shift();
   }
@@ -1624,6 +1689,8 @@ class YaziModal extends Modal {
   toFilesView() {
     this.view = "files";
     this.listItems = [];
+    // 這裡是「從清單跳進 vault」唯一的落地點：記住站在哪個資料夾（見 landing）
+    this.landing = this.cwd ? this.cwd.path : null;
     // 組合卡是搜尋專屬的，回檔案檢視一定要關掉，否則會蓋住整個版面
     this.composing = false;
     this.sug = null;
@@ -1645,94 +1712,35 @@ class YaziModal extends Modal {
    * Escape 的單一出口：一次退一層，退到最外層才關視窗。
    * 順序就是「最內層先退」——待接的多鍵序列 → 輸入列 → 確認 → 子檢視 → 關閉。
    */
+  /*
+   * Esc 的全部邏輯就這三步：收最上面的覆蓋層 → 沒有覆蓋層就退一個地方 → 沒有地方就關窗。
+   * 哪些東西算覆蓋層、怎麼收，全在 OVERLAYS 那張表；這裡不認識任何一個旗標。
+   *
+   * 搜尋結果的 Esc 因此就是退層（回到來的地方，或關窗）。要改條件是 i / Tab 回組合卡；
+   * 拿掉條件是組合卡裡的 Backspace。曾經試過「結果按 Esc 先回組合卡」，實際用起來是
+   * 多一層沒人要求的東西：從 ,gt 打完關鍵字看到結果，Esc 就該離開。
+   *
+   * 「退一個地方」對檔案檢視也成立 —— 從書籤跳進某個資料夾之後人在檔案檢視，
+   * 但下面那層是書籤清單，Esc 該退回那份清單而不是直接關窗。
+   */
   escapeBack() {
-    if (this.pending) {
-      this.pending = null;
-      this.render();
+    const top = OVERLAYS.find((o) => o.open(this));
+    if (top) {
+      top.close(this);
+      if (!top.leaves) this.render();   // leaves 的那種自己會畫（退層或關窗）
       return;
     }
-    // 建議列／正在挑值 是疊在最上層的互動，先收掉它，不要一路退到關視窗
-    if (this.sug || this.sugField) {
-      this.sug = null;
-      this.sugField = null;
-      this.render();
-      return;
-    }
-    /*
-     * 搜尋結果 → 退回組合卡（條件原封留著，可以看、可以改）。
-     *
-     * 組合卡與結果是同一個 view 的兩個階段，不是兩層，所以層堆疊管不到這一步。
-     * 而「看到結果，想再收窄一點」是搜尋最常見的下一步 —— Esc 直接離開整個搜尋，
-     * 等於把剛組好的條件丟掉。資料夾搜尋沒有組合卡（見 openSearch），跳過這步。
-     *
-     * ⚠️ 這裡刻意**不**逐一退掉條件：退條件是組合卡裡 Backspace 的事（說明頁有寫），
-     *    兩顆鍵做同一件事只會讓 Esc 要按很多下才離得開。
-     */
-    if (this.view === "search" && !this.composing && this.mode === "nav" && this.searchKind !== "dir") {
-      this.reopenComposer();
-      return;
-    }
-    /*
-     * 說明頁是疊在最上層的，第一個 Esc 應該只收掉它 —— 但如果正在／已經搜尋，
-     * 先清掉搜尋（一次退一層：輸入 → 過濾結果 → 說明頁本身）。
-     */
-    if (this.showHelp && (this.mode === "helpfilter" || this.helpFilter)) {
-      this.helpFilter = "";
-      if (this.mode === "helpfilter") this.endInput();
-      this.render();
-      return;
-    }
-    if (this.showHelp) {
-      this.showHelp = false;
-      this.render();
-      return;
-    }
-    if (this.mode === "search") {
-      this.endInput();
-      this.leaveSubView();
-      return;
-    }
-    if (this.mode === "listfilter") {
-      this.listFilter = "";
-      this.endInput();
-      if (this.view === "search") this.buildSearchList();
-      else this.buildList();
-      this.render();
-      return;
-    }
-    if (this.mode === "filter") {
-      this.filter = "";
-      this.endInput();
-      this.setCursor(this.cursorIndex());
-      this.render();
-      return;
-    }
-    if (this.mode === "prompt") {
-      this.endInput();
-      this.render();
-      return;
-    }
-    if (this.mode === "confirm") {
-      this.mode = "nav";
-      this.confirmTarget = null;
-      this.confirmAsk = null;
-      this.render();
-      return;
-    }
-    // 選取／visual 比「退回上一層」更內層：Esc 先清掉它們，不會連視窗一起關掉
-    if (this.view === "files" && this.clearSelection()) {
-      this.render();
-      return;
-    }
-    /*
-     * 還有上一層就退回去。**檔案檢視也算** —— 從書籤跳進某個資料夾之後人是在檔案
-     * 檢視，但下面那層是書籤清單，Esc 該退回那份清單而不是直接關掉整個視窗。
-     */
-    if (this.view !== "files" || this.layers.length) {
-      this.leaveSubView();
-      return;
-    }
+    if (this.popLayer()) return;
     this.forceClose();
+  }
+
+  /* 進到新的地方之前收掉臨時覆蓋層（見 OVERLAYS 的 ephemeral） */
+  closeOverlays() {
+    for (const o of OVERLAYS) if (o.ephemeral && o.open(this)) o.close(this);
+  }
+
+  hasSelection() {
+    return !!(this.sel && this.sel.size) || !!this.visual;
   }
 
   /*
@@ -2366,7 +2374,7 @@ class YaziModal extends Modal {
 
     if (this.view === "tabs") {
       const ws = this.app.workspace;
-      this.close();
+      this.forceClose();   // 切分頁＝離開瀏覽器，不走 close() 的 Esc 攔截路徑
       ws.setActiveLeaf(item.leaf, { focus: true });
       return;
     }
@@ -2614,6 +2622,24 @@ class YaziModal extends Modal {
     this.inputWrapEl.hide();
     this.inputEl.blur();
     this.inputEl.value = this.filter;
+  }
+
+  /* Esc 在輸入列上：丟掉這次的輸入、回到 nav。三種輸入各有自己要復原的東西。 */
+  cancelInput() {
+    if (this.mode === "listfilter") {
+      this.listFilter = "";
+      this.endInput();
+      if (this.view === "search") this.buildSearchList();
+      else this.buildList();
+      return;
+    }
+    if (this.mode === "filter") {
+      this.filter = "";
+      this.endInput();
+      this.setCursor(this.cursorIndex());
+      return;
+    }
+    this.endInput();   // prompt：放棄輸入
   }
 
   newNote() {
@@ -3168,7 +3194,10 @@ class YaziModal extends Modal {
           return;
         }
         if (!this.listItems.length) return;
-        // 送出：組合卡收起來，版面讓給結果。條件與關鍵字都留著，i/Tab 可以回來改
+        // 送出：組合卡收起來，版面讓給結果。條件與關鍵字都留著，i/Tab 可以回來改。
+        // 建議列是組合卡的一部分，一起收 —— 留著的話左欄會變成「加條件」而不是圖例
+        this.sug = null;
+        this.sugField = null;
         this.composing = false;
         this.endInput();
         this.render();
@@ -3939,7 +3968,8 @@ class YaziModal extends Modal {
      * 但建議是此刻正在進行的動作，優先。圖例常駐這件事本身就是功能的發現機制：
      * 什麼都不按就看得到「Tab 加條件」，所以不會有「有功能但沒人知道」的狀態。
      */
-    if (this.view === "search" && (this.sug || this.sugField)) {
+    // 建議列只屬於組合卡（mode search）；送出之後就算 sug 還沒清，也不該畫出來蓋掉圖例
+    if (this.view === "search" && this.mode === "search" && (this.sug || this.sugField)) {
       this.renderSuggest(this.parentEl);
       this.renderListMain();
       return;

@@ -21,7 +21,7 @@ const SRC = path.join(__dirname, "..", "src", "main.js");
 /* 想從 main.js 裡挖出來測的東西。加新的測試對象就加在這裡。 */
 const EXPOSED = [
   "absPath", "wheelPx",
-  "PENDING_MENUS", "PREVIEW_SCROLL_KEYS", "HALF_PAGE", "HELP", "SORTS",
+  "PENDING_MENUS", "PREVIEW_SCROLL_KEYS", "HALF_PAGE", "HELP", "SORTS", "OVERLAYS",
   "stripPluginNoise", "stripForRender", "fmInfo", "userTags", "fileTags",
   "YaziModal", "isFolder", "sortFiles",
 ];

@@ -10,7 +10,7 @@ const stub = { obsidian: { Plugin: class {}, FileSystemAdapter: class FileSystem
   Platform: { isWin: true, isDesktopApp: true }, prepareFuzzySearch: null } };
 const orig = Module._load;
 Module._load = function (req) { return stub[req] || orig.apply(this, arguments); };
-const { YaziModal } = require(require("./_probe.js").probePath()).__test;
+const { YaziModal, OVERLAYS } = require(require("./_probe.js").probePath()).__test;
 
 let fail = 0;
 const eq = (n, got, want) => { const ok = JSON.stringify(got) === JSON.stringify(want); if (!ok) fail++;
@@ -23,11 +23,11 @@ const mk = (over) => Object.assign(Object.create(YaziModal.prototype), {
   layers: [], opening: false, composing: false, relFile: null, outlineFile: null,
   searchKind: "file", searchQuery: "", scopePath: "", cwd: null, cursorPath: null, filter: "",
   forceClose: () => acts.push("close"),
-  clearSelection: () => false,
+  sel: new Set(), visual: 0, visualAnchor: -1,
+  setCursor() {}, cursorIndex() { return 0; },
   buildList() { acts.push("build:" + this.view); },
   buildSearchList() { acts.push("build:search"); },
-  endInput() {}, render() {}, swallow() {}, scope: { keys: [] },
-  reopenComposer() { acts.push("composer"); this.composing = true; },
+  endInput() { this.mode = "nav"; }, render() {}, swallow() {}, scope: { keys: [] },
 }, over);
 const esc = (m) => { acts.length = 0; m.escapeBack(); return acts.slice(); };
 
@@ -38,25 +38,26 @@ for (const v of ["bookmarks", "tabs", "recent", "frecency", "views", "outline", 
 }
 
 /*
- * ── 1b. 搜尋結果比較特別：組合卡與結果是同一層的兩個階段 ──
- * Esc 先退回組合卡（條件留著可以改），再按才是離開整個搜尋。
+ * ── 1b. 搜尋結果的 Esc ＝退層，不回組合卡 ──
+ * ,gt 打完關鍵字、Enter 看到結果、Esc → 離開（最底層就關窗）。
+ * 要改條件是 i / Tab；拿掉條件是組合卡裡的 Backspace，所以 Esc 不逐一拆條件。
  */
-const res = mk({ view: "search", searchKind: "file" });
-eq("搜尋結果：Esc 先退回組合卡", esc(res), ["composer"]);
-eq("這時人在組合卡", res.composing, true);
-eq("組合卡再按 Esc 才離開（堆疊空 → 關視窗）", esc(res), ["close"]);
+eq("直接開的搜尋結果：Esc 關窗", esc(mk({ view: "search", searchKind: "file" })), ["close"]);
+eq("資料夾搜尋也一樣", esc(mk({ view: "search", searchKind: "dir" })), ["close"]);
+eq("組合卡裡（輸入列有焦點）按 Esc：離開搜尋",
+   esc(mk({ view: "search", searchKind: "file", mode: "search", composing: true })), ["close"]);
 
-eq("資料夾搜尋沒有組合卡，直接離開",
-   esc(mk({ view: "search", searchKind: "dir" })), ["close"]);
-eq("還在組合卡裡時不會又叫一次組合卡",
-   esc(mk({ view: "search", searchKind: "file", composing: true })), ["close"]);
-eq("輸入列有焦點時走 mode === search 那條，不是回組合卡",
-   esc(mk({ view: "search", searchKind: "file", mode: "search" })), ["close"]);
-
-/* 條件是用 Backspace 退的，Esc 不逐一拆掉（否則要按很多下才離得開） */
 const keep = mk({ view: "search", searchKind: "file", facets: [{ id: "a" }, { id: "b" }] });
-eq("有條件時 Esc 仍然是退回組合卡", esc(keep), ["composer"]);
-eq("條件原封不動", keep.facets.length, 2);
+eq("有條件時 Esc 仍是退層，條件不被逐一拆掉", [esc(keep), keep.facets.length], [["close"], 2]);
+
+const fromView = mk({ view: "search", searchKind: "file",
+  layers: [{ view: "views", listItems: [{}], listIndex: 0 }] });
+eq("從檢視清單跑出來的結果：Esc 退回檢視清單", esc(fromView), ["build:views"]);
+eq("回到檢視清單", fromView.view, "views");
+
+const fromFiles = mk({ view: "search", searchKind: "text",
+  layers: [{ view: "files", listItems: [] }] });
+eq("從檔案檢視按 gt 進來的結果：Esc 退回檔案檢視", [esc(fromFiles), fromFiles.view], [[], "files"]);
 
 /* ── 2. 有上一層 → 退回去，不關 ── */
 const back = mk({ view: "bookmarks", layers: [{ view: "files", listItems: [], listIndex: 0 }] });
@@ -65,7 +66,6 @@ eq("退回檔案檢視、堆疊空了", [back.view, back.layers.length], ["files
 eq("再按一次才關", esc(back), ["close"]);
 
 /* 退回清單時要重建（離開期間檔案可能被刪、書籤可能被移除） */
-// 起點刻意不用 search：那個檢視的 Esc 會先退回組合卡（見 1b），測不到 pop
 const rebuilt = mk({ view: "outline", layers: [{ view: "bookmarks", listItems: [{}, {}, {}], listIndex: 2, listFilter: "x" }] });
 eq("退回清單檢視會重建那份清單", esc(rebuilt), ["build:bookmarks"]);
 eq("過濾字也一起還原", [rebuilt.view, rebuilt.listFilter], ["bookmarks", "x"]);
@@ -112,9 +112,11 @@ const pend = mk({ view: "bookmarks", pending: "g" });
 eq("待接的多鍵前綴最內層", esc(pend), []);
 eq("只取消前綴", [pend.pending, pend.view], [null, "bookmarks"]);
 
-const sug = mk({ view: "search", sug: { items: [] } });
-eq("建議列開著時先收建議", esc(sug), []);
-eq("只收掉建議", [sug.sug, sug.view], [null, "search"]);
+const sug = mk({ view: "search", mode: "search", composing: true, sug: { items: [] } });
+eq("組合卡裡建議列開著：先收建議，不離開", esc(sug), []);
+eq("只收掉建議，組合卡還在", [sug.sug, sug.mode], [null, "search"]);
+eq("送出後殘留的 sug 不算覆蓋層（結果畫面 Esc 直接退層）",
+   esc(mk({ view: "search", mode: "nav", sug: { items: [] } })), ["close"]);
 
 /*
  * ── 6. 三顆鍵三種語意 ──
@@ -134,6 +136,69 @@ eq("有上一層時 h 退回去", [key(hl, "h"), hl.view, hl.layers.length], [[]
 
 eq("最底層按 q ＝關視窗", key(bottom(), "q"), ["close"]);
 eq("有上一層時 q 也直接關（q 是 quit，不是退層）", key(hasLayer(), "q"), ["close"]);
+
+/*
+ * ── 6b. 從清單跳進資料夾之後的 h ──
+ * 落地點（landing）按 h ＝退回那份清單；鑽進子資料夾之後 h 是上一層資料夾，
+ * 走回落地點再按 h 才退層。vault 根目錄有上一層時也退層而不是喊「已在根目錄」。
+ */
+const folder = (p, parent) => ({ path: p, parent: parent || null, children: [] });
+const root = folder("/");
+const work = folder("100 工作", root);
+const sub = folder("100 工作/projects", work);
+const filesMk = (cwd, landing, layers) => mk({
+  view: "files", cwd, landing, layers, memo: new Map(), cursorPath: null, filter: "",
+  mainList: () => [], cursorIndex: () => -1, plugin: null,
+});
+const atLanding = filesMk(work, "100 工作", [{ view: "bookmarks", listItems: [{}], listIndex: 0 }]);
+eq("站在落地點按 h：退回書籤清單", key(atLanding, "h"), ["build:bookmarks"]);
+eq("回到書籤", atLanding.view, "bookmarks");
+
+const deeper = filesMk(sub, "100 工作", [{ view: "bookmarks", listItems: [{}], listIndex: 0 }]);
+eq("鑽進子資料夾後按 h：上一層資料夾，不退層", [key(deeper, "h"), deeper.cwd.path, deeper.layers.length],
+   [[], "100 工作", 1]);
+eq("走回落地點再按 h：這次退回書籤", [key(deeper, "h"), deeper.view], [["build:bookmarks"], "bookmarks"]);
+
+const atRoot = filesMk(root, null, [{ view: "search", listItems: [{}], listIndex: 0 }]);
+eq("vault 根目錄且有上一層：h 退層（不是「已在根目錄」）", key(atRoot, "h"), ["build:search"]);
+
+const plain = filesMk(sub, null, []);
+eq("一般瀏覽（沒有落地點、沒有上一層）：h 就是上一層資料夾", [key(plain, "h"), plain.cwd.path], [[], "100 工作"]);
+
+/*
+ * ── 6c. OVERLAYS 表本身：每一種覆蓋層，一下 Esc 收掉、地方不動 ──
+ * 這組是「加新功能忘了接 Esc」的安全網：表裡每一列都被逐一驗證，
+ * 而且用堆疊非空的清單當底，證明收覆蓋層時**沒有**順手退層。
+ */
+const openState = {
+  pending:    { view: "bookmarks", pending: "g" },
+  suggest:    { view: "search", mode: "search", composing: true, sug: { items: [] } },
+  helpfilter: { view: "bookmarks", showHelp: true, helpFilter: "x" },
+  help:       { view: "bookmarks", showHelp: true },
+  input:      { view: "bookmarks", mode: "listfilter", listFilter: "x" },
+  confirm:    { view: "bookmarks", mode: "confirm", confirmAsk: { message: "?", onYes() {} } },
+  selection:  { view: "files", sel: new Set(["a.md"]) },
+};
+for (const o of OVERLAYS) {
+  if (o.leaves) continue;   // 組合卡：收掉＝離開，另有測試（1b）
+  const setup = openState[o.id];
+  eq("OVERLAYS 表裡的 " + o.id + " 在測試裡有對應狀態", !!setup, true);
+  if (!setup) continue;
+  const m = mk(Object.assign({ layers: [{ view: "files", listItems: [] }] }, setup));
+  eq(o.id + "：Esc 之前是開著的", o.open(m), true);
+  const before = m.view;
+  const got = esc(m);
+  // 退層會改 view 或減少 layers；收覆蓋層兩者都不動（listfilter 收掉會重建清單，那不是退層）
+  eq(o.id + "：一下 Esc 收掉、沒有退層也沒關窗", [o.open(m), got.includes("close"), m.view, m.layers.length],
+     [false, false, before, 1]);
+}
+eq("表裡每一列都有 id / open / close", OVERLAYS.every((o) => o.id && typeof o.open === "function" && typeof o.close === "function"), true);
+
+/* 進到新的地方時，臨時覆蓋層要被收掉、不能存進快照 */
+const carry = mk({ view: "bookmarks", pending: "g", showHelp: true, plugin: null });
+carry.pushLayer();
+eq("pushLayer 收掉臨時覆蓋層", [carry.pending, carry.showHelp], [null, false]);
+eq("快照裡也沒有它們", [carry.layers[0].pending, carry.layers[0].showHelp], [undefined, undefined]);
 
 /* ── 7. 開場的初始檢視不算一層 ── */
 const opening = mk({ opening: true });

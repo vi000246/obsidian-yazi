@@ -1,6 +1,6 @@
 # Spec Roadmap
 
-> Auto-updated index. Last updated: 2026-09-18 12:18
+> Auto-updated index. Last updated: 2026-09-18 13:40
 >
 > **AI Agents**: Read this file first to decide which specs to load. Load only what's relevant to your task to avoid context bloat.
 

@@ -202,7 +202,7 @@ Three keys leave things, and they mean three different things:
 
 | | |
 |---|---|
-| `h` | back to **where you came from** — the list or folder you were in before. At the first layer it stays put. |
+| `h` | back to **where you came from** — the list or folder you were in before. At the first layer it stays put. After jumping into a folder from a list, `h` in *that* folder returns to the list; deeper folders step up one level as usual. |
 | `Esc` | dismiss the innermost thing first (a suggestion, an input, the help page, a search card…); with nothing left, back one layer; at the first layer, **close** |
 | `q` | close the explorer, from anywhere |
 
