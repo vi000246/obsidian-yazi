@@ -436,6 +436,7 @@ module.exports = {
   "legend.open": "開啟",
   "legend.escLayers": "收建議 → 拿掉條件（一顆一顆）→ 取消搜尋",
   "legend.backToFiles": "回檔案檢視",
+  "legend.closeExplorer": "關閉視窗",
   "legend.backToList": "回到剛才那份清單",
   "legend.outlineFollow": "移動；預覽跟著捲到該標題",
   "legend.outlineOpen": "開檔並跳到這個標題",

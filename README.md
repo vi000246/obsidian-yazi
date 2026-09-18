@@ -194,6 +194,10 @@ plugin, where these work well as `,`-sequences:
 | Open tab list · bookmarks · recent files · frequently used | those lists |
 | Search: full text · file names · folders | straight into that search |
 
+`Esc` closes the topmost layer. If you walked into a list from the file view, it takes you back
+there; if a command opened you **straight into** that list, there is no layer underneath, so `Esc`
+closes the explorer. `q` does the same, `h` always goes back to the file view.
+
 ### Finding a key
 
 Press `?` for the full list, then `/` to search it — matches are highlighted, and typing a section

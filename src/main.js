@@ -708,6 +708,14 @@ class YaziModal extends Modal {
       this.app.vault.on(evt, () => this.render())
     );
 
+    /*
+     * 進來時停在哪一層。Esc 是「關掉最上面那一層」，所以要知道**最底下**是哪一層：
+     * 從檔案檢視走進書籤，底層是檔案檢視，Esc 退回去；用 ,b 直接開書籤，書籤本身
+     * 就是底層，Esc 沒有「下面那層」可退，該關掉整個視窗（見 isEntryLayer）。
+     * 三種搜尋在 view 上都是 "search"，這裡先收斂成同一個名字。
+     */
+    this.entryView = /^search-/.test(this.initialView || "") ? "search" : (this.initialView || "files");
+
     if (this.initialView === "search-text") this.openSearch("text");
     else if (this.initialView === "search-file") this.openSearch("file");
     else if (this.initialView === "search-dir") this.openSearch("dir");
@@ -1605,7 +1613,7 @@ class YaziModal extends Modal {
     }
     if (this.mode === "search") {
       this.endInput();
-      this.backToFiles();
+      this.leaveSubView();
       return;
     }
     if (this.mode === "listfilter") {
@@ -1641,10 +1649,35 @@ class YaziModal extends Modal {
       return;
     }
     if (this.view !== "files") {
-      this.backToFiles();
+      this.leaveSubView();
       return;
     }
     this.forceClose();
+  }
+
+  /*
+   * 離開一個子檢視（書籤、搜尋結果、大綱…）。
+   *   從檔案檢視走進來的 → 退回檔案檢視（那是它下面那一層）
+   *   用命令／熱鍵直接開進來的 → 這層就是最底層，直接關掉整個視窗
+   * 後者是 ,b / ,gt / ,gv 這種用法的重點：那時候人根本沒打算逛檔案，
+   * 退回一個沒要求過的檔案清單等於多按一次 Esc 才走得掉。
+   */
+  leaveSubView() {
+    if (this.isEntryLayer()) {
+      this.forceClose();
+      return;
+    }
+    this.backToFiles();
+  }
+
+  /* 現在停的這一層，就是進來時直接開的那一層嗎（中間沒有再往上疊）？ */
+  isEntryLayer() {
+    if (!this.entryView || this.entryView === "files") return false;
+    if (this.view !== this.entryView) return false;
+    // 從這一層又往上疊了（gr 一路走訪、從某份清單進大綱）→ 還有上層要先退
+    if (this.relStack && this.relStack.length) return false;
+    if (this.outlineFrom) return false;
+    return true;
   }
 
   /*
@@ -3277,7 +3310,10 @@ class YaziModal extends Modal {
         case ",": this.pending = ","; this.render(); break;
         case "r": this.pending = "r"; this.render(); break;
         case "?": this.showHelp = !this.showHelp; this.render(); break;
-        case "h": case "q": this.backToFiles(); break;
+        // h ＝往左／退回（導航）；q 跟 Esc 一樣是「關掉這一層」，
+        // 所以用命令直接開進來的那一層，q 也會關掉整個視窗
+        case "h": this.backToFiles(); break;
+        case "q": this.leaveSubView(); break;
         case "Escape": this.escapeBack(); break;
         default:
           // 書籤／檢視清單裡直接按該筆的字母也能開
@@ -3867,6 +3903,10 @@ class YaziModal extends Modal {
         ? [["Esc", this.t("legend.escLayers", "drop the suggestion → drop conditions one by one → cancel the search")]]
         : (this.view === "outline" && this.outlineFrom) || (this.view === "relations" && this.relStack.length)
         ? [["h / q / Esc", this.t("legend.backToList", "back to the list you came from")]]
+        // 直接開進這一層的：Esc 沒有「下面那層」可退，就是關掉整個視窗
+        : this.isEntryLayer()
+        ? [["q / Esc", this.t("legend.closeExplorer", "close the explorer")],
+           ["h", this.t("legend.backToFiles", "back to the file view")]]
         : [["h / q / Esc", this.t("legend.backToFiles", "back to the file view")]];
     for (const [k, desc] of keys.concat(back)) {
       const row = legend.createDiv({ cls: "yazi-help-row" });

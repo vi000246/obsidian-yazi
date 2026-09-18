@@ -452,6 +452,7 @@ module.exports = {
   "legend.open": "open",
   "legend.escLayers": "drop the suggestion → drop conditions one by one → cancel the search",
   "legend.backToFiles": "back to the file view",
+  "legend.closeExplorer": "close the explorer",
   "legend.backToList": "back to the list you came from",
   "legend.outlineFollow": "move; the preview scrolls to that heading",
   "legend.outlineOpen": "open the note at this heading",
