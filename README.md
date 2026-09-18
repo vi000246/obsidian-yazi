@@ -8,7 +8,7 @@ If you navigate your vault from the sidebar file tree with a mouse, this is the 
 three-column browser that opens on the file you are already editing, and that you never have to take
 your hands off the keyboard to use.
 
-![The explorer: parent folder, current folder, and a live preview](docs/images/overview.png)
+![Miller columns: the parent folder, the folder you are in, and what is inside the item under the cursor](docs/images/overview.png)
 
 > **Status:** early. In daily use in a 5000-note vault, but the settings schema may still change
 > before 1.0.
@@ -79,7 +79,7 @@ Scroll the preview without moving the cursor: `J` / `K` (five lines), `^e` / `^y
 `^d` / `^u` (half a page), `^f` / `^b` or `PageDown` / `PageUp` (a page). **The mouse wheel scrolls
 the preview wherever the pointer happens to be**, so you never have to move the mouse into it.
 
-![Preview pane rendering a table, with the which-key popup open](docs/images/preview.png)
+![A fuzzy file-name search, with the note under the cursor rendered in the preview pane](docs/images/preview.png)
 
 ### Finding things
 
@@ -99,7 +99,7 @@ actually exist, and a typo shows up as “only 1 note has this”.
 Searches always have a scope, shown as a chip. `^f` changes it, offering candidates from widest to
 narrowest: whole vault → each folder above → where you started → each folder below.
 
-![Full-text search: hits with context, conditions as chips](docs/images/search.png)
+![The search card: conditions come from a menu, and the result count updates before you commit](docs/images/search.png)
 
 ### Working with files
 
@@ -130,8 +130,6 @@ Everything else you configure — see below.
 ## Configuration
 
 *Settings → Yazi Explorer*. Every section exports and imports as JSON, so a setup can be shared.
-
-![The settings tab: sections on the left, rule cards on the right](docs/images/settings.png)
 
 ### Openers — the `O` menu
 
@@ -206,6 +204,8 @@ hidden because drawing them on every row is noise. The status table, priority or
 conditions and the preview-panel field order live in the **Advanced (JSON)** box of the rule —
 they are nested data, and a form for them would be thirty input boxes.
 </details>
+
+![Row decoration examples: each one shows the row it produces before you add it](docs/images/settings.png)
 
 The settings tab ships a gallery of examples — each one **shows the row it produces** before you add
 it. The first few match on *“this field has a value”* rather than on a particular word, so they work

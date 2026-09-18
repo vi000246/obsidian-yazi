@@ -550,7 +550,9 @@ class YaziSettingTab extends PluginSettingTab {
       foot.createSpan({ cls: "yazi-set-gallery-name", text: ex.name });
       const b = foot.createEl("button", { text: this.t("settings.decorations.addThis", "Add") });
       b.onclick = async () => {
-        s.decorations.push(Object.assign(JSON.parse(JSON.stringify(ex)), { id: uid() }));
+        const copy = JSON.parse(JSON.stringify(ex));
+        for (const k of Object.keys(copy)) if (k.startsWith("_")) delete copy[k];
+        s.decorations.push(Object.assign(copy, { id: uid() }));
         await this.commit();
       };
     }
@@ -669,7 +671,13 @@ class YaziSettingTab extends PluginSettingTab {
     const fm = {};
     const put = (spec, value) => { if (spec && spec.field) fm[spec.field] = value; };
     if (rule.when && rule.when.field) {
-      fm[rule.when.field] = Array.isArray(rule.when.in) ? rule.when.in[0] : rule.when.equals;
+      /* 三種命中條件都要造得出假資料。漏掉「只要有值」那種的話，那類規則會在自己的
+         預覽裡顯示「不會命中任何筆記」—— 規則明明是對的，看起來卻像壞的。 */
+      fm[rule.when.field] = Array.isArray(rule.when.in)
+        ? rule.when.in[0]
+        : rule.when.equals !== undefined
+        ? rule.when.equals
+        : this.t("settings.decorations.sampleValue", "value");
     }
     put(rule.icon, rule.icon && rule.icon.from === "map"
       ? Object.keys((rule.icon && rule.icon.map) || {})[0] || "?"
@@ -682,6 +690,8 @@ class YaziSettingTab extends PluginSettingTab {
     if (rule.priority && rule.priority.field) {
       fm[rule.priority.field] = Object.keys((rule.priority.order) || {})[0] || "";
     }
+
+    if (rule._sample) Object.assign(fm, rule._sample);
 
     const names = { name: "2026-09-13.md", basename: "2026-09-13" };
     let info = null;

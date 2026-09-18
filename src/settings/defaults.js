@@ -144,6 +144,8 @@ const EXAMPLE_DECORATIONS = [
     when: { field: "status" },
     icon: { from: "fixed", value: "·" },
     status: { field: "status" },
+    /* 預覽用的假值。底線開頭的 key 只有設定頁的範例牆看，加入設定時會被剝掉。 */
+    _sample: { status: "draft" },
     enabled: true,
   },
   {

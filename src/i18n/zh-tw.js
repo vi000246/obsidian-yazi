@@ -432,4 +432,5 @@ module.exports = {
   "settings.decorations.galleryDesc": "加一條進來再改，或自己寫一條。規則格式寫在 README。",
   "settings.decorations.readme": "開啟 README",
   "settings.decorations.addThis": "加入",
+  "settings.decorations.sampleValue": "值",
 };

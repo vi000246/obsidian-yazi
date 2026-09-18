@@ -448,4 +448,5 @@ module.exports = {
   "settings.decorations.galleryDesc": "Add one and edit it, or write your own. The rule format is documented in the README.",
   "settings.decorations.readme": "Open the README",
   "settings.decorations.addThis": "Add",
+  "settings.decorations.sampleValue": "value",
 };
