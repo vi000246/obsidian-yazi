@@ -13,7 +13,7 @@ const eq = (n, got, want) => { const ok = JSON.stringify(got) === JSON.stringify
 
 const ev = (key) => ({ key, type: "keydown", preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} });
 const base = (view) => Object.assign(Object.create(YaziModal.prototype), {
-  view, mode: "nav", pending: null, showHelp: false, visual: 0, listItems: [{}, {}], listIndex: 0,
+  view, mode: "nav", pending: null, showHelp: false, visual: 0, listItems: [{}, {}], listIndex: 0, layers: [],
   swallow() {}, render() {}, scope: { keys: [] }, plugin: null,
 });
 
@@ -70,7 +70,7 @@ const app = { metadataCache: { getFileCache: (f) => f === mdFile
   ? { headings: [{ level: 2, heading: "Intro", position: { start: { line: 4 } } }, { level: 3, heading: "More", position: { start: { line: 9 } } }] }
   : null } };
 const mkList = () => Object.assign(base("search"), {
-  app, listItems: [{ file: mdFile, label: "a.md" }], listIndex: 0, listFilter: "kept",
+  app, listItems: [{ file: mdFile, label: "a.md" }], listIndex: 0, listFilter: "kept", layers: [],
   sortCfg: () => ({ field: "natural", reverse: false, foldersFirst: true }),
   composing: false,
 });
@@ -79,12 +79,13 @@ const before = s.listItems;
 s.openOutline();
 eq("進到大綱檢視", s.view, "outline");
 eq("標題變成清單項目（標籤／層級／行號）", s.listItems.map((i) => [i.label, i.sub, i.line, i.depth]), [["Intro", "H2", 4, 0], ["More", "H3", 9, 1]]);
-eq("記住從哪份清單來", s.outlineFrom && s.outlineFrom.view, "search");
+eq("把來的那一層推進堆疊", s.layers.map((l) => l.view), ["search"]);
 eq("清單內過濾在大綱裡是乾淨的", s.listFilter, "");
+s.buildSearchList = function () { this.listItems = before; };
 s.backToFiles();
 eq("h 退回搜尋結果，不是檔案檢視", s.view, "search");
 eq("原來的項目與過濾字都還在", [s.listItems === before, s.listFilter], [true, "kept"]);
-eq("返回點用掉就清掉", s.outlineFrom, null);
+eq("退回去之後堆疊空了", s.layers.length, 0);
 
 /* 排序設定不能打亂大綱順序 */
 const sorted = mkList();
@@ -95,7 +96,7 @@ eq("有全域排序時大綱仍照文章順序", sorted.listItems.map((i) => i.l
 /* 檔案檢視進來：退回檔案檢視 */
 const f = Object.assign(base("files"), { app, current: () => mdFile, sortCfg: () => ({ field: "natural" }) });
 f.openOutline();
-eq("檔案檢視進來沒有返回點", [f.view, f.outlineFrom], ["outline", null]);
+eq("檔案檢視進來，推的是檔案檢視那一層", [f.view, f.layers.map((l) => l.view)], ["outline", ["files"]]);
 f.backToFiles();
 eq("h 回檔案檢視", f.view, "files");
 
@@ -105,10 +106,10 @@ const png = Object.assign(base("files"), { app, current: () => ({ path: "x.png",
 png.openOutline();
 eq("非 md：留在原檢視並提示", [png.view, notices.length], ["files", 1]);
 
-/* 換到別的清單，返回點失效 */
+/* 換到別的清單：那也是一層，所以堆疊變深而不是被清掉 */
 const t = mkList(); t.openOutline();
 t.collectTabs = () => []; t.openList("tabs");
-eq("切到分頁清單後返回點清掉", t.outlineFrom, null);
+eq("從大綱切到分頁清單：大綱那層也留在堆疊裡", t.layers.map((l) => l.view), ["search", "outline"]);
 
 /* ── 4. Enter 開檔要帶行號 ── */
 const opened = [];

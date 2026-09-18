@@ -37,7 +37,7 @@ const app = {
 };
 const mk = (view, over) => Object.assign(Object.create(YaziModal.prototype), {
   view, mode: "nav", pending: null, showHelp: false, visual: 0, listItems: [], listIndex: 0,
-  listFilter: "", relFile: null, relStack: [], outlineFrom: null, composing: false,
+  listFilter: "", relFile: null, layers: [], composing: false,
   app, plugin: { settings: { relations: DEFAULT_RELATIONS } },
   sortCfg: () => ({ field: "natural", reverse: false, foldersFirst: true }),
   swallow() {}, render() {}, scope: { keys: [] },
@@ -71,37 +71,44 @@ bare.openRelations();
 eq("裸 id 也解析得到（檔名前綴比對）", bare.listItems.map((i) => [i.group, i.label]),
    [["Parent", "OB-19 9 17開會討論內容"]]);
 
-/* ── 3. 走訪堆疊：gr 再 gr，h 退一步 ── */
+/* ── 3. 沿關聯走：gr 再 gr，h 退一步（走的是通用的層堆疊） ── */
 const walk = mk("files", { current: () => a });
 walk.openRelations();
-eq("第一層中心是 a", [walk.relFile.path, walk.relStack.length], ["a.md", 0]);
+eq("第一層中心是 a，堆疊裡是進來前的檔案檢視",
+   [walk.relFile.path, walk.layers.map((l) => l.view)], ["a.md", ["files"]]);
 walk.listIndex = 1;                       // Children → d
 walk.openRelations();
-eq("再按 gr：中心換成 d，a 進堆疊", [walk.relFile.path, walk.relStack.map((f) => f.path)], ["d.md", ["a.md"]]);
+eq("再按 gr：中心換成 d，a 那層進堆疊",
+   [walk.relFile.path, walk.layers.map((l) => l.view + ":" + (l.relFile ? l.relFile.path : "-"))],
+   ["d.md", ["files:-", "relations:a.md"]]);
 eq("d 的關聯：Parent a", walk.listItems.map((i) => [i.group, i.label]), [["Parent", "a"]]);
 walk.backToFiles();
-eq("h 退一步：回到 a，還在關聯檢視", [walk.view, walk.relFile.path, walk.relStack.length], ["relations", "a.md", 0]);
+eq("h 退一步：回到 a，還在關聯檢視",
+   [walk.view, walk.relFile.path, walk.layers.length], ["relations", "a.md", 1]);
 walk.backToFiles();
-eq("再按 h：堆疊空了就回檔案檢視", walk.view, "files");
+eq("再按 h：退回檔案檢視", walk.view, "files");
 
-/* 切到別的清單，堆疊清掉 */
+/* 切到別的清單：那也是一層，堆疊變深 */
 const t = mk("files", { current: () => a });
 t.openRelations();
 t.listIndex = 1; t.openRelations();
 t.collectTabs = () => []; t.openList("tabs");
-eq("切到分頁清單後走訪紀錄清掉", t.relStack, []);
+eq("從關聯切到分頁清單：關聯那兩層都還在堆疊裡",
+   t.layers.map((l) => l.view), ["files", "relations", "relations"]);
 
 /* ── 4. Enter / l 跳游標；o / t 才開檔 ── */
 const acts = [];
 const j = mk("relations", {
-  listItems: [{ path: "b.md", file: b }], listIndex: 0, relFile: a, relStack: [a],
+  listItems: [{ path: "b.md", file: b }], listIndex: 0, relFile: a, layers: [],
   revealPath: (p) => acts.push("reveal:" + p),
   openFile: (f, mode) => acts.push("open:" + f.path + ":" + mode),
   buildList() {}, clearSelection: () => false,
 });
 j.handleKey(ev("Enter"));
 eq("Enter：跳游標、不開檔", acts, ["reveal:b.md"]);
-eq("跳過去之後回檔案檢視、走訪紀錄結束", [j.view, j.relStack.length], ["files", 0]);
+// 跳進 vault 也是一層：Esc 要退得回這份關聯清單
+eq("跳過去之後在檔案檢視，關聯那層留在堆疊裡",
+   [j.view, j.layers.map((l) => l.view)], ["files", ["relations"]]);
 
 acts.length = 0;
 const o = mk("relations", { listItems: [{ path: "b.md", file: b }], listIndex: 0, relFile: a,

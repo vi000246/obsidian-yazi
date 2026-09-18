@@ -1,9 +1,9 @@
 /*
  * Esc 的層次。
  *
- * 規則：Esc 關掉**最上面那一層**。所以「下面還有什麼」決定了它做什麼 ——
- * 從檔案檢視走進書籤，下面是檔案檢視，Esc 退回去；用 ,b 直接開書籤，那層就是
- * 最底層，Esc 該關掉整個視窗而不是丟一個沒人要求過的檔案清單出來。
+ * 規則只有一條：**進新的一層就 push，Esc 就 pop，pop 不動就關視窗。**
+ * 這支測的是那條規則涵蓋到的每一種轉場 —— 之前三套各自為政的返回機制
+ * （outlineFrom / relStack / 什麼都沒有）每多一種轉場就多一個「Esc 退錯地方」的 bug。
  */
 const Module = require("module");
 const stub = { obsidian: { Plugin: class {}, FileSystemAdapter: class FileSystemAdapter { getBasePath() { return ""; } }, PluginSettingTab: class { constructor(a,p){ this.app=a; this.plugin=p; } }, Setting: class { constructor(){ return new Proxy(this,{get:()=>()=>this}); } }, Modal: class {}, Notice: class {}, Component: class {}, MarkdownRenderer: {},
@@ -19,66 +19,100 @@ const eq = (n, got, want) => { const ok = JSON.stringify(got) === JSON.stringify
 const acts = [];
 const mk = (over) => Object.assign(Object.create(YaziModal.prototype), {
   view: "files", mode: "nav", pending: null, showHelp: false, helpFilter: "",
-  sug: null, sugField: null, facets: [], listItems: [], listIndex: 0,
-  relStack: [], outlineFrom: null, entryView: "files",
+  sug: null, sugField: null, facets: [], listItems: [], listIndex: 0, listFilter: "",
+  layers: [], opening: false, composing: false, relFile: null, outlineFile: null,
+  searchKind: "file", searchQuery: "", scopePath: "", cwd: null, cursorPath: null, filter: "",
   forceClose: () => acts.push("close"),
-  backToFiles: () => acts.push("toFiles"),
   clearSelection: () => false,
+  buildList() { acts.push("build:" + this.view); },
+  buildSearchList() { acts.push("build:search"); },
   endInput() {}, render() {}, swallow() {}, scope: { keys: [] },
 }, over);
 const esc = (m) => { acts.length = 0; m.escapeBack(); return acts.slice(); };
 
-/* ── 從檔案檢視走進去的：Esc 退回檔案檢視 ── */
-eq("檔案檢視 → 書籤，Esc 退回檔案檢視",
-   esc(mk({ view: "bookmarks", entryView: "files" })), ["toFiles"]);
-eq("檔案檢視 → 搜尋結果，Esc 退回檔案檢視",
-   esc(mk({ view: "search", entryView: "files" })), ["toFiles"]);
-eq("在檔案檢視按 Esc 才是關閉", esc(mk({ view: "files", entryView: "files" })), ["close"]);
-
-/* ── 用命令直接開進來的：那層就是最底層，Esc 關掉整個視窗 ── */
-for (const v of ["bookmarks", "tabs", "recent", "frecency", "views", "outline", "relations"]) {
-  eq("直接開 " + v + "，Esc 關閉整個視窗", esc(mk({ view: v, entryView: v })), ["close"]);
+/* ── 1. 沒有上一層 → 關視窗 ── */
+eq("檔案檢視、堆疊空：Esc 關視窗", esc(mk()), ["close"]);
+for (const v of ["bookmarks", "tabs", "recent", "frecency", "views", "outline", "relations", "search"]) {
+  eq("用命令直接開進 " + v + "（堆疊空）：Esc 關視窗", esc(mk({ view: v })), ["close"]);
 }
 
-/* 三種搜尋在 view 上都是 "search"，entryView 已經收斂過 */
-eq("直接開搜尋（結果階段），Esc 關閉",
-   esc(mk({ view: "search", entryView: "search" })), ["close"]);
-eq("直接開搜尋（輸入還開著），Esc 也關閉",
-   esc(mk({ view: "search", entryView: "search", mode: "search" })), ["close"]);
+/* ── 2. 有上一層 → 退回去，不關 ── */
+const back = mk({ view: "bookmarks", layers: [{ view: "files", listItems: [], listIndex: 0 }] });
+eq("從檔案檢視走進書籤：Esc 退回去而不是關", esc(back), []);
+eq("退回檔案檢視、堆疊空了", [back.view, back.layers.length], ["files", 0]);
+eq("再按一次才關", esc(back), ["close"]);
 
-/* ── 但「上面又疊了一層」時要先退那一層 ── */
-eq("直接開關聯又用 gr 走了一步：先退那一步，不關視窗",
-   esc(mk({ view: "relations", entryView: "relations", relStack: [{}] })), ["toFiles"]);
-eq("直接開搜尋後從結果進大綱：先退回搜尋結果",
-   esc(mk({ view: "outline", entryView: "search", outlineFrom: { view: "search" } })), ["toFiles"]);
-eq("直接開書籤後切到分頁清單：不是原本那層了，照一般規則",
-   esc(mk({ view: "tabs", entryView: "bookmarks" })), ["toFiles"]);
+/* 退回清單時要重建（離開期間檔案可能被刪、書籤可能被移除） */
+const rebuilt = mk({ view: "search", layers: [{ view: "bookmarks", listItems: [{}, {}, {}], listIndex: 2, listFilter: "x" }] });
+eq("退回清單檢視會重建那份清單", esc(rebuilt), ["build:bookmarks"]);
+eq("過濾字也一起還原", [rebuilt.view, rebuilt.listFilter], ["bookmarks", "x"]);
 
-/* ── 搜尋自己的層次仍然優先：條件要一個一個退掉 ── */
-const withFacets = mk({ view: "search", entryView: "search", facets: [{ id: "a" }, { id: "b" }],
-  listIndex: 3, buildSearchList() {} });
-eq("有條件時 Esc 先退條件，不關視窗", esc(withFacets), []);
-eq("退掉一個條件", withFacets.facets.length, 1);
+const backToSearch = mk({ view: "outline", layers: [{ view: "search", listItems: [{}], listIndex: 0 }] });
+eq("退回搜尋結果會重跑搜尋", esc(backToSearch), ["build:search"]);
 
-/* 說明頁疊在最上層，先收它 */
-const help = mk({ view: "bookmarks", entryView: "bookmarks", showHelp: true });
-eq("說明頁開著時 Esc 先關說明，不關視窗", esc(help), []);
-eq("說明頁關掉了", help.showHelp, false);
+/* 游標位置還原，但清單縮短時要夾回範圍內 */
+const shrunk = mk({ view: "outline", layers: [{ view: "bookmarks", listItems: [], listIndex: 7 }],
+  buildList() { this.listItems = [{}, {}]; } });
+esc(shrunk);
+eq("清單變短時游標夾回最後一筆", shrunk.listIndex, 1);
+
+/* ── 3. 多層：一次退一層 ── */
+const deep = mk({ view: "relations", layers: [
+  { view: "files", listItems: [] },
+  { view: "bookmarks", listItems: [] },
+  { view: "relations", listItems: [], relFile: { path: "a.md" } },
+] });
+esc(deep);
+eq("第一次退到關聯的上一個中心", [deep.view, deep.relFile.path, deep.layers.length], ["relations", "a.md", 2]);
+esc(deep);
+eq("第二次退到書籤", [deep.view, deep.layers.length], ["bookmarks", 1]);
+esc(deep);
+eq("第三次退到檔案檢視", [deep.view, deep.layers.length], ["files", 0]);
+eq("第四次才關視窗", esc(deep), ["close"]);
+
+/* ── 4. 從清單跳進 vault：view 是 files，但堆疊非空 → Esc 退回那份清單 ── */
+const jumped = mk({ view: "files", layers: [{ view: "bookmarks", listItems: [{}] }] });
+eq("在檔案檢視但有上一層：Esc 退回去而不是關", esc(jumped), ["build:bookmarks"]);
+eq("回到書籤清單", jumped.view, "bookmarks");
+
+/* ── 5. 更內層的東西優先 ── */
+const withFacets = mk({ view: "search", facets: [{ id: "a" }, { id: "b" }] });
+eq("有搜尋條件時先退條件", esc(withFacets), ["build:search"]);
+eq("退掉一個條件、沒有動到堆疊", [withFacets.facets.length, withFacets.view], [1, "search"]);
+
+const help = mk({ view: "bookmarks", showHelp: true });
+eq("說明頁開著時先關說明", esc(help), []);
+eq("說明頁關了、視窗還在", [help.showHelp, help.view], [false, "bookmarks"]);
 eq("再按一次才關視窗", esc(help), ["close"]);
 
-/* 待接的多鍵序列最內層 */
-const pend = mk({ view: "bookmarks", entryView: "bookmarks", pending: "g" });
-eq("有待接的前綴時 Esc 只取消它", esc(pend), []);
-eq("前綴清掉了", pend.pending, null);
+const helpSearch = mk({ view: "files", showHelp: true, helpFilter: "book" });
+eq("說明頁的搜尋比說明頁本身更內層", esc(helpSearch), []);
+eq("先清掉搜尋，說明頁還在", [helpSearch.helpFilter, helpSearch.showHelp], ["", true]);
 
-/* ── q 跟 Esc 同一個語意；h 永遠是「退回檔案檢視」 ── */
+const pend = mk({ view: "bookmarks", pending: "g" });
+eq("待接的多鍵前綴最內層", esc(pend), []);
+eq("只取消前綴", [pend.pending, pend.view], [null, "bookmarks"]);
+
+const sug = mk({ view: "search", sug: { items: [] } });
+eq("建議列開著時先收建議", esc(sug), []);
+eq("只收掉建議", [sug.sug, sug.view], [null, "search"]);
+
+/* ── 6. q 與 Esc 同語意；h 是導航 ── */
 const ev = (key) => ({ key, type: "keydown", preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} });
 const key = (m, k) => { acts.length = 0; m.handleKey(ev(k)); return acts.slice(); };
-const direct = () => mk({ view: "bookmarks", entryView: "bookmarks", plugin: null });
-eq("直接開的那層按 q ＝關閉整個視窗", key(direct(), "q"), ["close"]);
-eq("直接開的那層按 h ＝退回檔案檢視（導航）", key(direct(), "h"), ["toFiles"]);
-const nested = () => mk({ view: "bookmarks", entryView: "files", plugin: null });
-eq("走進來的那層按 q ＝退回檔案檢視", key(nested(), "q"), ["toFiles"]);
+eq("堆疊空的那層按 q ＝關視窗", key(mk({ view: "bookmarks", plugin: null }), "q"), ["close"]);
+eq("堆疊空的那層按 h ＝切到檔案檢視（不關）", key(mk({ view: "bookmarks", plugin: null }), "h"), []);
+const hasLayer = () => mk({ view: "bookmarks", plugin: null, layers: [{ view: "files", listItems: [] }] });
+eq("有上一層時 q 退回去", key(hasLayer(), "q"), []);
+eq("有上一層時 h 也退回去", key(hasLayer(), "h"), []);
+
+/* ── 7. 開場的初始檢視不算一層 ── */
+const opening = mk({ opening: true });
+opening.pushLayer();
+eq("opening 期間 push 不做事（初始檢視就是最底層）", opening.layers.length, 0);
+opening.opening = false;
+opening.pushLayer();
+eq("開場結束後照常 push", opening.layers.length, 1);
 
 console.log(fail ? "\n" + fail + " 項失敗" : "\n全部通過");
 process.exit(fail ? 1 : 0);

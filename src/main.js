@@ -125,6 +125,13 @@ const PREVIEW_SEEK_LINES = 5;   // J / K 一次捲幾行（＝ yazi 的 seek 5 /
 const OUTLINE_PAD = 6;          // 大綱跳到標題時，標題上緣留幾 px，不要貼死在欄頂
 
 /*
+ * 層堆疊最多留幾層（見 YaziModal.pushLayer）。
+ * 有上限是因為 gr 可以沿著連結一直走下去，而每一層都握著一份清單的參照；
+ * 超過就丟掉最舊的那層 —— 退了二十幾次還在退的人，要的是關掉視窗，不是繼續退。
+ */
+const LAYER_MAX = 24;
+
+/*
  * 這些前綴的標籤在 UI 裡一律濾掉（搜尋候選、預覽面板都是）。
  *
  * 它們是**筆記系統自動掛上去的**分類標籤，不是人手選的。留著的話它們靠數量穩坐
@@ -501,9 +508,18 @@ class YaziModal extends Modal {
     this.searchQuery = "";   // 搜尋關鍵字（Enter 收起輸入列後還要留著）
     this.listFilter = "";    // 在搜尋結果裡再過濾一層
     this.outlineFile = null; // 大綱檢視（go）在看哪個檔
-    this.outlineFrom = null; // 從哪份清單進到大綱的（h/q/Esc 要退回去）；檔案檢視進來的是 null
+    this.opening = false;    // 開場的初始檢視期間為 true，那期間不推層（見 pushLayer）
     this.relFile = null;     // 關聯檢視（gr）以哪個檔為中心
-    this.relStack = [];      // 沿著關聯一路走過來的檔（h 一次退一步）
+    /*
+     * 層堆疊。Esc／q／h 是「退回上一層」，而「上一層」有很多種：從檔案檢視按 b 進書籤、
+     * 從書籤跳進某個資料夾、從檢視清單執行一個搜尋、從搜尋結果按 go 看大綱、
+     * 用 gr 沿著關聯一路走 —— 全部都是同一件事。
+     *
+     * 一開始這裡是三個各自為政的欄位（outlineFrom / relStack / 什麼都沒有），
+     * 結果每多一種轉場就多一個「Esc 退錯地方」的 bug。改成一個堆疊之後，
+     * 規則只剩一條：**進新的一層就 push，退就 pop，pop 不動就關視窗。**
+     */
+    this.layers = [];
     this.previewPath = null; // 右欄目前畫的是哪個檔（大綱檢視靠它決定「只捲不重畫」）
     this.facets = [];        // 搜尋條件 chip（見 FACETS 常數的長註解）
     this.sug = null;         // 建議清單 {items, index}
@@ -714,8 +730,19 @@ class YaziModal extends Modal {
      * 就是底層，Esc 沒有「下面那層」可退，該關掉整個視窗（見 isEntryLayer）。
      * 三種搜尋在 view 上都是 "search"，這裡先收斂成同一個名字。
      */
-    this.entryView = /^search-/.test(this.initialView || "") ? "search" : (this.initialView || "files");
+    /*
+     * 開場停的那一層是**最底層**：用 ,b / ,gv 直接開進書籤或檢視清單時，下面沒有
+     * 東西可退，Esc 就該關掉整個視窗。所以這段期間不推層（見 pushLayer）。
+     */
+    this.opening = true;
+    try {
+      this.openInitialView();
+    } finally {
+      this.opening = false;
+    }
+  }
 
+  openInitialView() {
     if (this.initialView === "search-text") this.openSearch("text");
     else if (this.initialView === "search-file") this.openSearch("file");
     else if (this.initialView === "search-dir") this.openSearch("dir");
@@ -935,9 +962,17 @@ class YaziModal extends Modal {
 
   /* ── 清單檢視（分頁 / 書籤 / 最近）── */
 
-  openList(view) {
-    if (view !== "outline") this.outlineFrom = null;   // 換到別的清單，大綱的返回點就失效了
-    if (view !== "relations") this.relStack = [];      // 同理，關聯的走訪紀錄
+  /*
+   * 開一份清單檢視。預設會把目前這一層推進堆疊（Esc 退得回來）。
+   * opts.skipPush ＝呼叫端自己 push 過了（openOutline / openRelations 要在改狀態
+   * **之前**就 push，否則快照裡的 outlineFile / relFile 已經是新的了）。
+   */
+  openList(view, opts) {
+    if (!(opts && opts.skipPush)) this.pushLayer();
+    // 清單檢視沒有組合卡與建議列 —— 留著會蓋掉左欄的按鍵圖例（看起來像跑版）
+    this.composing = false;
+    this.sug = null;
+    this.sugField = null;
     this.view = view;
     this.listIndex = 0;
     this.showHelp = false;
@@ -948,6 +983,7 @@ class YaziModal extends Modal {
   /* ── 全域模糊搜尋（gt 檔案 / gd 資料夾）── */
 
   openSearch(kind) {
+    this.pushLayer();          // Esc 從搜尋退回原本在看的東西
     this.view = "search";
     this.searchKind = kind;
     this.mode = "search";
@@ -1531,11 +1567,12 @@ class YaziModal extends Modal {
       return;
     }
     this.endInput();
+    // 從搜尋結果跳進 vault ＝又一層：Esc 要退得回這份結果，不是一路關掉
+    this.pushLayer();
     this.listItems = [];
     if (isFolder(f)) {
       this.gotoFolder(f);
-      this.view = "files";
-      this.render();
+      this.toFilesView();
       return;
     }
     if (openDirectly) {
@@ -1544,31 +1581,64 @@ class YaziModal extends Modal {
       return;
     }
     this.revealPath(f.path);
+    this.toFilesView();
   }
 
-  backToFiles() {
-    // 沿關聯走過來的：h 一次退一步，回到上一個中心，而不是一路跳回檔案檢視
-    if (this.view === "relations" && this.relStack.length) {
-      this.relFile = this.relStack.pop();
-      this.listFilter = "";
-      this.listIndex = 0;
-      this.buildList();
-      this.render();
-      return;
-    }
-    // 從某份清單進到大綱的，退回那份清單（項目與游標都原樣還在），不是跳回檔案檢視
-    if (this.view === "outline" && this.outlineFrom) {
-      Object.assign(this, this.outlineFrom);
-      this.outlineFrom = null;
-      this.render();
-      return;
-    }
-    this.outlineFrom = null;
+  /* ── 層堆疊 ──
+   *
+   * 規則只有一條：進新的一層之前 pushLayer()，要退就 popLayer()。
+   * 「哪一層」包含整個可見狀態（檢視、清單、游標、搜尋條件、所在資料夾），
+   * 所以退回去看到的就是離開時的樣子，不是重新算一份近似的。
+   */
+  snapshot() {
+    return {
+      view: this.view, listItems: this.listItems, listIndex: this.listIndex, listFilter: this.listFilter,
+      relFile: this.relFile, outlineFile: this.outlineFile,
+      searchKind: this.searchKind, searchQuery: this.searchQuery,
+      facets: (this.facets || []).slice(), scopePath: this.scopePath, searchOrigin: this.searchOrigin,
+      composing: this.composing, cwd: this.cwd, cursorPath: this.cursorPath, filter: this.filter,
+    };
+  }
+
+  pushLayer() {
+    // 開場的初始檢視（,b / ,gv 之類）不算「疊上去的一層」—— 它就是最底層
+    if (this.opening) return;
+    this.layers.push(this.snapshot());
+    if (this.layers.length > LAYER_MAX) this.layers.shift();
+  }
+
+  /** 退回上一層。回傳 false ＝沒有上一層了。 */
+  popLayer() {
+    const s = this.layers.pop();
+    if (!s) return false;
+    const idx = s.listIndex;
+    Object.assign(this, s);
+    /*
+     * 清單重建而不是直接用快照裡那份：離開的這段期間檔案可能被刪、書籤可能被移除。
+     * 游標位置在重建之後才還原 —— buildList 會把超出範圍的索引夾回去。
+     */
+    if (this.view === "search") this.buildSearchList();
+    else if (this.view !== "files") this.buildList();
+    if (this.listItems.length) this.listIndex = Math.min(idx, this.listItems.length - 1);
+    this.render();
+    return true;
+  }
+
+  /* 切回檔案檢視本身（不動堆疊）。h 在沒有上一層時用這個。 */
+  toFilesView() {
     this.view = "files";
     this.listItems = [];
     // 組合卡是搜尋專屬的，回檔案檢視一定要關掉，否則會蓋住整個版面
     this.composing = false;
+    this.sug = null;
+    this.sugField = null;
     this.render();
+  }
+
+  // h：往回一層；已經在最底層就單純切到檔案檢視（不關視窗）
+  backToFiles() {
+    if (this.popLayer()) return;
+    this.toFilesView();
   }
 
   /*
@@ -1648,7 +1718,11 @@ class YaziModal extends Modal {
       this.render();
       return;
     }
-    if (this.view !== "files") {
+    /*
+     * 還有上一層就退回去。**檔案檢視也算** —— 從書籤跳進某個資料夾之後人是在檔案
+     * 檢視，但下面那層是書籤清單，Esc 該退回那份清單而不是直接關掉整個視窗。
+     */
+    if (this.view !== "files" || this.layers.length) {
       this.leaveSubView();
       return;
     }
@@ -1663,21 +1737,13 @@ class YaziModal extends Modal {
    * 退回一個沒要求過的檔案清單等於多按一次 Esc 才走得掉。
    */
   leaveSubView() {
-    if (this.isEntryLayer()) {
-      this.forceClose();
-      return;
-    }
-    this.backToFiles();
+    if (this.popLayer()) return;
+    this.forceClose();
   }
 
-  /* 現在停的這一層，就是進來時直接開的那一層嗎（中間沒有再往上疊）？ */
+  /* 現在這一層就是最底層嗎（Esc 再按下去就是關視窗）？只給圖例用。 */
   isEntryLayer() {
-    if (!this.entryView || this.entryView === "files") return false;
-    if (this.view !== this.entryView) return false;
-    // 從這一層又往上疊了（gr 一路走訪、從某份清單進大綱）→ 還有上層要先退
-    if (this.relStack && this.relStack.length) return false;
-    if (this.outlineFrom) return false;
-    return true;
+    return this.layers.length === 0 && this.view !== "files";
   }
 
   /*
@@ -1947,14 +2013,10 @@ class YaziModal extends Modal {
       this.render();
       return;
     }
-    // 從搜尋結果／書籤清單進來的，記住那份清單，h/q/Esc 退回去（見 backToFiles）
-    this.outlineFrom =
-      this.view === "files"
-        ? null
-        : { view: this.view, listItems: this.listItems, listIndex: this.listIndex, listFilter: this.listFilter };
+    this.pushLayer();          // 退回來時看到的是原本那份清單／資料夾
     this.outlineFile = f;
     this.listFilter = "";
-    this.openList("outline");
+    this.openList("outline", { skipPush: true });
   }
 
   // 游標現在指著哪個檔案：檔案檢視看游標列，清單檢視看清單項目
@@ -2027,13 +2089,11 @@ class YaziModal extends Modal {
       this.render();
       return;
     }
-    // 已經在關聯檢視裡再按 gr ＝ 以這一筆為新中心，舊的推進堆疊（h 退回去）
-    const stack = this.view === "relations" && this.relFile ? this.relStack.concat([this.relFile]) : [];
+    // 已經在關聯檢視裡再按 gr ＝以這一筆為新中心，舊的那層推進堆疊（h 退回去）
+    this.pushLayer();
     this.relFile = f;
     this.listFilter = "";
-    this.openList("relations");
-    this.relStack = stack;
-    this.render();
+    this.openList("relations", { skipPush: true });
   }
 
   collectRelationItems() {
@@ -2151,6 +2211,8 @@ class YaziModal extends Modal {
   /* 執行一個檢視：把條件灌回搜尋狀態，直接跳結果（不經過組合卡）。 */
   runView(v) {
     if (!v) return;
+    // 從檢視清單執行一個檢視 ＝又一層：Esc 要退得回那份清單
+    this.pushLayer();
     this.view = "search";
     this.searchKind = v.kind || "file";
     this.searchQuery = v.query || "";
@@ -2297,20 +2359,22 @@ class YaziModal extends Modal {
       return;
     }
     if (isFolder(f)) {
+      // 從清單跳進 vault ＝又一層：Esc 要退得回這份清單（書籤存的常常就是資料夾）
+      this.pushLayer();
       this.gotoFolder(f);
-      this.backToFiles();
+      this.toFilesView();
       return;
     }
     this.openFile(f, openMode || "current");
   }
 
-  // 關聯檢視的 Enter / l：游標跳到那個檔並回到檔案檢視，走訪紀錄就此結束
+  // 關聯檢視的 Enter / l：游標跳到那個檔並回到檔案檢視（Esc 退得回這份關聯清單）
   revealRelation() {
     const item = this.listCurrent();
     if (!item) return;
-    this.relStack = [];
+    this.pushLayer();
     this.revealPath(item.path);
-    this.backToFiles();
+    this.toFilesView();
   }
 
   // 清單裡按 x
@@ -3901,7 +3965,7 @@ class YaziModal extends Modal {
     const back =
       this.view === "search"
         ? [["Esc", this.t("legend.escLayers", "drop the suggestion → drop conditions one by one → cancel the search")]]
-        : (this.view === "outline" && this.outlineFrom) || (this.view === "relations" && this.relStack.length)
+        : this.layers.length
         ? [["h / q / Esc", this.t("legend.backToList", "back to the list you came from")]]
         // 直接開進這一層的：Esc 沒有「下面那層」可退，就是關掉整個視窗
         : this.isEntryLayer()
@@ -4388,10 +4452,11 @@ class YaziModal extends Modal {
            */
           try {
             this.renderFmPanel(el, info);
+            raw = stripFrontmatter(this.app, file, text);
           } catch (e) {
             console.error("[yazi-explorer] frontmatter panel failed", e);
+            raw = text;   // 切不掉就連 YAML 一起顯示，總比整個預覽不見好
           }
-          raw = stripFrontmatter(this.app, file, text);
         }
         /*
          * plugin 的機關（meta-bind 按鈕、dataviewjs…）一律不進預覽 ——
@@ -4785,6 +4850,35 @@ function userTags(value) {
     for (const part of String(value).split(/[,\s]+/)) add(part);
   }
   return out.filter((t) => !AUTO_TAG_PREFIXES.some((p) => t.startsWith(p)));
+}
+
+/*
+ * 把開頭那塊 YAML frontmatter 從內文裡切掉。
+ *
+ * 為什麼要切：認得的 frontmatter 已經在上面畫成表格了，不切的話預覽的前十幾行
+ * 永遠是同一堆 YAML，真正的內容被擠出畫面。
+ *
+ * 先用 metadataCache 的 frontmatterPosition（Obsidian 自己算的，最準）；拿不到就退回
+ * 自己比對開頭的 `---` 區塊。兩條路都失敗就原樣回傳 —— 寧可多顯示幾行，
+ * 也不要為了切乾淨而砍掉別人的內容。
+ */
+function stripFrontmatter(app, file, text) {
+  const s = String(text == null ? "" : text);
+  try {
+    const cache = app && app.metadataCache ? app.metadataCache.getFileCache(file) : null;
+    const pos = cache && (cache.frontmatterPosition || (cache.frontmatter && cache.frontmatter.position));
+    if (pos && pos.end && typeof pos.end.offset === "number") {
+      return s.slice(pos.end.offset).replace(/^\r?\n/, "");
+    }
+  } catch (e) { /* 拿不到就走下面的比對 */ }
+
+  // `---` 必須在第一行；結尾是 --- 或 ...（YAML 兩種都合法）
+  if (!/^---\s*\r?\n/.test(s)) return s;
+  const lines = s.split("\n");
+  for (let i = 1; i < lines.length; i++) {
+    if (/^(---|\.\.\.)\s*\r?$/.test(lines[i])) return lines.slice(i + 1).join("\n").replace(/^\r?\n/, "");
+  }
+  return s;   // 沒有收尾的 ---：那不是 frontmatter，別亂切
 }
 
 function fileTags(app, f) {
