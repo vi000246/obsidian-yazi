@@ -171,13 +171,18 @@ ed.buildList();
 ed.handleKey(ev("e"));
 eq("資料夾搜尋沒有組合卡", [ed.view, ed.composing], ["search", false]);
 
-/* ── 7. x 刪除 ── */
+/* ── 7. x 刪除：先問 y/n，y 才刪 ── */
 const d = mk({ view: "views" });
 d.plugin.data.views = [{ id: "v1", name: "A" }, { id: "v2", name: "B" }];
 d.buildList();
 d.listIndex = 0;
 d.removeListItem();
-eq("x 刪掉游標那一筆", d.plugin.views().map((v) => v.name), ["B"]);
+eq("x 先問，還沒刪", [d.mode, d.plugin.views().length], ["confirm", 2]);
+d.handleKey(ev("n"));
+eq("按 n 取消：兩筆都在、回到 nav", [d.mode, d.plugin.views().map((v) => v.name)], ["nav", ["A", "B"]]);
+d.removeListItem();
+d.handleKey(ev("y"));
+eq("按 y 才刪掉游標那一筆", d.plugin.views().map((v) => v.name), ["B"]);
 
 console.log(fail ? "\n" + fail + " 項失敗" : "\n全部通過");
 process.exit(fail ? 1 : 0);

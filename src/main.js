@@ -2439,12 +2439,16 @@ class YaziModal extends Modal {
     if (!item) return;
     if (this.view === "outline" || this.view === "relations") return;   // 這兩種清單沒有「刪掉這一列」的意思
 
+    // 檢視與書籤都是使用者一筆一筆存下來的，x 又在 j/k 附近 —— 刪之前問一聲，y 才動手
     if (this.view === "views" && item.viewDef && this.plugin) {
-      this.plugin.removeView(item.viewDef.id).then(() => {
-        this.buildList();
-        this.render();
+      const v = item.viewDef;
+      this.askConfirm(this.t("confirm.deleteView", "Delete view “{name}”?", { name: v.name }), () => {
+        this.plugin.removeView(v.id).then(() => {
+          this.buildList();
+          this.render();
+        });
+        new Notice(this.t("notice.viewRemoved", "View deleted: {name}", { name: v.name }));
       });
-      new Notice(this.t("notice.viewRemoved", "View deleted: {name}", { name: item.viewDef.name }));
       return;
     }
 
@@ -2457,11 +2461,14 @@ class YaziModal extends Modal {
     }
 
     if (this.view === "bookmarks" && this.plugin) {
-      this.plugin.removeBookmark(item.path).then(() => {
-        this.buildList();
-        this.render();
+      const label = item.title || item.path;
+      this.askConfirm(this.t("confirm.deleteBookmark", "Delete bookmark “{name}”?", { name: label }), () => {
+        this.plugin.removeBookmark(item.path).then(() => {
+          this.buildList();
+          this.render();
+        });
+        new Notice(this.t("notice.bookmarkRemoved", "Bookmark removed: {path}", { path: label }));
       });
-      new Notice(this.t("notice.bookmarkRemoved", "Bookmark removed: {path}", { path: item.path }));
       return;
     }
 

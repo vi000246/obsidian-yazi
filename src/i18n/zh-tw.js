@@ -462,6 +462,8 @@ module.exports = {
   "confirm.deleteOne": "刪除「{name}」？",
   "confirm.yes": "  y = 確定，其他鍵取消",
   "confirm.bookmark": "把「{name}」加入書籤？",
+  "confirm.deleteBookmark": "刪除書籤「{name}」？",
+  "confirm.deleteView": "刪除檢視「{name}」？",
   "confirm.saveView": "把這次搜尋存成檢視？",
   "ui.helpBar": "說明　·　Esc 或 ? 關閉",
   "ui.sortShort": "排序:",

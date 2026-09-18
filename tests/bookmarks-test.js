@@ -21,6 +21,7 @@ function fakePlugin() {
     bookmarks: () => data.bookmarks,
     findBookmark: (p) => data.bookmarks.find((b) => b.path === p) || null,
     bookmarkByKey: (k) => data.bookmarks.find((b) => b.key === k) || null,
+    async removeBookmark(path) { data.bookmarks = data.bookmarks.filter((b) => b.path !== path); },
     async addBookmark(path, name) {
       const e = this.findBookmark(path);
       if (e) { if (name) e.name = name; return false; }
@@ -101,6 +102,22 @@ eq("改完存回去（路徑不動）", r.plugin.bookmarks().map((x) => [x.path,
 const nr = mk({ view: "views", renameBookmark: () => { throw new Error("不該叫"); } });
 nr.handleKey(ev("R"));
 eq("檢視清單按 R 不會誤觸書籤改名", true, true);
+
+/* ── 5. x 刪除：先問 y/n，y 才刪 ── */
+const x = mk({ view: "bookmarks" });
+x.plugin.data.bookmarks = [{ path: diary.path, name: "今天的日記", key: null }, { path: folder.path, name: null, key: null }];
+x.buildList();
+x.listIndex = 0;
+x.handleKey(ev("x"));
+eq("x 先問，還沒刪", [x.mode, x.plugin.bookmarks().length], ["confirm", 2]);
+x.handleKey(ev("n"));
+eq("按 n 取消：兩筆都在、回到 nav", [x.mode, x.plugin.bookmarks().length], ["nav", 2]);
+x.handleKey(ev("x"));
+x.handleKey(ev("y"));
+eq("按 y 才刪掉游標那一筆", x.plugin.bookmarks().map((b) => b.path), [folder.path]);
+eq("Esc 也能取消（confirm 是 OVERLAYS 的一列）",
+   (() => { x.buildList(); x.listIndex = 0; x.handleKey(ev("x")); x.escapeBack(); return [x.mode, x.plugin.bookmarks().length]; })(),
+   ["nav", 1]);
 
 console.log(fail ? "\n" + fail + " 項失敗" : "\n全部通過");
 process.exit(fail ? 1 : 0);

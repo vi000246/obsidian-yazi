@@ -478,6 +478,8 @@ module.exports = {
   "confirm.deleteOne": "Delete “{name}”?",
   "confirm.yes": "  y = confirm, any other key cancels",
   "confirm.bookmark": "Bookmark “{name}”?",
+  "confirm.deleteBookmark": "Delete bookmark “{name}”?",
+  "confirm.deleteView": "Delete view “{name}”?",
   "confirm.saveView": "Save this search as a view?",
   "ui.helpBar": "Help · Esc or ? to close",
   "ui.sortShort": "sort:",
