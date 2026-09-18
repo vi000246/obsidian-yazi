@@ -1,0 +1,6 @@
+# PRP tracker binding for this repo (see ~/.claude/prp-shared.md → Tracker Config).
+# Public community plugin: issues live on GitHub, PRP produces documents only.
+configured: true
+tracker:
+  primary:
+    kind: none
