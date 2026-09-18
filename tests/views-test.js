@@ -28,8 +28,9 @@ function fakePlugin() {
     views: () => data.views,
     viewByKey: (k) => data.views.find((v) => v.key === k) || null,
     async saveView(v) {
-      const at = data.views.findIndex((x) => x.name === v.name);
-      if (at >= 0) { v.key = data.views[at].key; data.views[at] = v; return true; }
+      let at = data.views.findIndex((x) => x.id === v.id);
+      if (at < 0) at = data.views.findIndex((x) => x.name === v.name);
+      if (at >= 0) { v.key = v.key || data.views[at].key; data.views[at] = v; return true; }
       data.views.push(v);
       return false;
     },
@@ -114,6 +115,39 @@ ov.searchQuery = "改過的";
 ov.saveCurrentView();
 eq("同名覆寫，不會變成兩筆", ov.plugin.views().length, 1);
 eq("覆寫後關鍵字更新、快捷字母留著", [ov.plugin.views()[0].query, ov.plugin.views()[0].key], ["改過的", "q"]);
+
+/* 同樣的條件再存一次：先問「已存在，要改名嗎」，y 才跳改名欄位，而且改的是同一筆 */
+let nextName = "第一次";
+let lastInitial = null;
+const dup = mk({ view: "search", searchKind: "file", searchQuery: "報表", facets: [{ id: "status", value: "3" }], scopePath: "",
+  promptFor: (label, initial, cb) => { lastInitial = initial; return cb(nextName); } });
+dup.saveCurrentView();
+eq("第一次存：直接問名字、存進去", dup.plugin.views().map((v) => v.name), ["第一次"]);
+const id0 = dup.plugin.views()[0].id;
+dup.plugin.views()[0].key = "w";
+nextName = "改過的名字";
+dup.saveCurrentView();
+eq("同樣條件再按 s：先問要不要改名，還沒動", [dup.mode, dup.plugin.views().length], ["confirm", 1]);
+dup.handleKey(ev("n"));
+eq("按 n：什麼都沒變", [dup.mode, dup.plugin.views().map((v) => v.name)], ["nav", ["第一次"]]);
+dup.saveCurrentView();
+dup.handleKey(ev("y"));
+eq("按 y：改名欄位預填舊名字", lastInitial, "第一次");
+eq("改的是同一筆（id、字母不變），仍然只有一筆",
+   dup.plugin.views().map((v) => [v.id === id0, v.name, v.key]), [[true, "改過的名字", "w"]]);
+
+/* chip 順序不同也算同樣條件；範圍或關鍵字不同就不算 */
+dup.facets = [{ id: "prio", value: "P1" }, { id: "status", value: "3" }];
+dup.plugin.data.views.push({ id: "v9", name: "另一份", kind: "file", query: "報表",
+  facets: [{ id: "status", value: "3" }, { id: "prio", value: "P1" }], scopePath: "" });
+dup.saveCurrentView();
+eq("chip 順序不同仍視為同樣條件", dup.mode, "confirm");
+dup.handleKey(ev("n"));
+dup.scopePath = "100 工作";
+nextName = "限定範圍的";
+dup.saveCurrentView();
+eq("多了範圍就是不同的檢視：直接存，不問", dup.plugin.views().map((v) => v.name).slice(-1), ["限定範圍的"]);
+eq("id 不會因為同一毫秒存兩份而撞號", new Set(dup.plugin.views().map((v) => v.id)).size, dup.plugin.views().length);
 
 /* ── 3. 清單顯示 ── */
 const l = mk({ view: "views" });

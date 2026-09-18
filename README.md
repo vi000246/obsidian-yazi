@@ -179,6 +179,10 @@ search card so you can change its conditions (`s` under the same name then repla
 deletes it, and `m` plus a letter assigns a shortcut — after which that letter runs it straight from
 the list.
 
+Saving the *same conditions* again does not create a twin: it asks whether to rename the existing
+view instead, and `y` opens the name box with the old name filled in. Saving under an existing
+*name* replaces that view's conditions.
+
 Views are editable under **Settings → Relations & views** too — name, letter, words, folder, and
 removing conditions. *Adding* a condition is deliberately only possible in the explorer: there the
 candidate values are read from your vault and come with counts, so you can see that a value actually

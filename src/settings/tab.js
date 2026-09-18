@@ -854,7 +854,7 @@ class YaziSettingTab extends PluginSettingTab {
    * 一張檢視卡。名稱、快捷字母、關鍵字、範圍都能改；**條件只能刪不能加** ——
    * 候選值是從 vault 讀出來的（帶筆數），在這裡手打欄位名與值等於在沒有回饋的
    * 情況下猜有沒有拼對。要加條件就在瀏覽器裡按 ,v 選到它、e 載回搜尋卡，
-   * 用 Tab 從選單挑，改完 ,s 存回同一個名字。
+   * 用 Tab 從選單挑，改完 s 存回同一個名字。
    */
   viewCard(list, v) {
     const card = new RuleCard(list, {
@@ -912,7 +912,7 @@ class YaziSettingTab extends PluginSettingTab {
     box.createDiv({ cls: "yazi-set-desc",
       text: this.t("settings.links.viewAddFacetHint",
         "To add a condition, open the view list with ,v, press e to load it back into the search card, " +
-        "pick conditions with Tab, then press ,s to save it under the same name.") });
+        "pick conditions with Tab, then press s to save it under the same name.") });
   }
 
   // 檢視摘要。跟瀏覽器裡那份是同一個意思，但這裡不依賴 modal 的狀態

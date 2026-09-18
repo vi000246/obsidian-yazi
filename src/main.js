@@ -132,6 +132,19 @@ const OUTLINE_PAD = 6;          // 大綱跳到標題時，標題上緣留幾 px
 const LAYER_MAX = 24;
 
 /*
+ * 兩個檢視的「條件」是否一樣（不看名字、id、字母）。
+ * 條件 chip 的順序不重要（A 再加 B 與 B 再加 A 是同一件事），所以先排序再比。
+ */
+function sameViewDef(a, b) {
+  if (!a || !b) return false;
+  if ((a.kind || "file") !== (b.kind || "file")) return false;
+  if (String(a.query || "").trim() !== String(b.query || "").trim()) return false;
+  if ((a.scopePath || "") !== (b.scopePath || "")) return false;
+  const key = (fs) => (fs || []).map((f) => f.id + "=" + f.value).sort().join("|");
+  return key(a.facets) === key(b.facets);
+}
+
+/*
  * 覆蓋層（overlay）：疊在「目前這個地方」上面的暫時狀態，Esc 一次收一層。
  *
  * 這張表是 Esc 行為的**唯一**定義，順序＝由內到外（前面的先收）。每一列只回答兩件事：
@@ -2196,27 +2209,56 @@ class YaziModal extends Modal {
       new Notice(this.t("notice.viewNeedsSearch", "Run a search first, then save it as a view"));
       return;
     }
+    /*
+     * 同樣的條件已經存過 → 不要默默存成第二份（兩個名字、一樣的結果，之後分不出哪個是哪個）。
+     * 問一聲「已存在，要改名嗎」，y 才跳改名欄位，而且改的是**那一筆**（id 不變、字母留著）。
+     * 只比條件不比名字：同名不同條件是「覆寫」，那是另一回事，說明頁與設定頁都寫了。
+     */
+    const def = this.currentViewDef();
+    const dup = this.plugin ? this.plugin.views().find((v) => sameViewDef(v, def)) : null;
+    if (dup) {
+      this.askConfirm(
+        this.t("confirm.viewExists", "A view with exactly these conditions exists: “{name}”. Rename it?", { name: dup.name }),
+        () => this.promptViewName(dup)
+      );
+      return;
+    }
     // 不另外問 y/n：接下來要打名字並按 Enter，那本身就擋掉了誤按 s 的情況
     this.promptViewName();
   }
 
-  promptViewName() {
-    const suggested = this.searchQuery || (this.facets[0] ? this.facetLabel(this.facets[0]) : "");
-    this.promptFor(this.t("prompt.saveView", "Save this search as: "), suggested, async (name) => {
+  /* 目前這場搜尋的條件（沒有名字）—— 存檢視、比對重複都用這一份 */
+  currentViewDef() {
+    return {
+      kind: this.searchKind,
+      query: (this.searchQuery || "").trim(),
+      facets: this.facets.map((f) => ({ id: f.id, value: f.value })),
+      scopePath: this.scopePath || "",
+    };
+  }
+
+  /* existing：改名既有那一筆（id、字母不動）；沒給就是存新的 */
+  promptViewName(existing) {
+    const suggested = existing
+      ? existing.name
+      : this.searchQuery || (this.facets[0] ? this.facetLabel(this.facets[0]) : "");
+    const label0 = existing
+      ? this.t("prompt.renameView", "Rename view to: ")
+      : this.t("prompt.saveView", "Save this search as: ");
+    this.promptFor(label0, suggested, async (name) => {
       const label = (name || "").trim();
       if (!label) return;
-      const view = {
-        id: "v" + Date.now().toString(36),
-        name: label,
-        key: null,
-        kind: this.searchKind,
-        query: this.searchQuery || "",
-        facets: this.facets.map((f) => ({ id: f.id, value: f.value })),
-        scopePath: this.scopePath || "",
-      };
       if (!this.plugin) return;
+      // id 不能只靠 Date.now()：同一毫秒存兩份會撞號，第二份會被當成「覆寫第一份」
+      const view = Object.assign(this.currentViewDef(), {
+        id: existing ? existing.id : "v" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        name: label,
+        key: existing ? existing.key : null,
+      });
       const replaced = await this.plugin.saveView(view);
-      new Notice(replaced
+      new Notice(existing
+        ? this.t("notice.viewRenamed", "View renamed: {name}", { name: label })
+        : replaced
         ? this.t("notice.viewReplaced", "View updated: {name}", { name: label })
         : this.t("notice.viewSaved", "View saved: {name}　(gv to open it)", { name: label }));
       this.render();
@@ -2268,7 +2310,7 @@ class YaziModal extends Modal {
 
   /*
    * 編輯一個檢視：把它的條件灌回**組合卡**（不是結果），人可以按 Tab 加條件、
-   * Backspace 退條件，改完按 Enter 看結果、再用 ,s 存回同一個名字（同名＝覆寫）。
+   * Backspace 退條件，改完按 Enter 看結果、再用 s 存回同一個名字（同名＝覆寫）。
    *
    * 為什麼編輯是「回到組合卡」而不是一張表單：條件的候選值是從 vault 讀出來的
    * （帶筆數），在表單裡手打欄位名與值，等於在沒有回饋的情況下猜有沒有拼對。
@@ -2278,7 +2320,7 @@ class YaziModal extends Modal {
     this.runView(v);
     if (this.view !== "search") return;   // 索引還在建，runView 已經接手畫面了
     this.reopenComposer();
-    new Notice(this.t("notice.viewEditing", "Editing “{name}” — save it with ,s under the same name", { name: v.name }));
+    new Notice(this.t("notice.viewEditing", "Editing “{name}” — save it with s under the same name", { name: v.name }));
   }
 
   /*
@@ -4029,8 +4071,9 @@ class YaziModal extends Modal {
             ["e", this.t("legend.viewEdit", "edit its conditions, then s saves over the same name")],
             ["m + " + this.t("ui.letter", "letter"), this.t("legend.assignLetter", "assign a letter (m + Backspace clears it)")],
             [this.t("ui.letter", "letter"), this.t("legend.viewLetter", "run that view straight away")],
+            // 這裡刻意不列 s：那顆鍵只在搜尋結果裡有效，列在這邊會變成「按了沒反應」。
+            // 怎麼新增寫在空清單的提示裡（ui.noViews）。
             ["x", this.t("legend.viewDelete", "delete the view")],
-            ["s", this.t("legend.viewSave", "in search results: save the current search as a view")],
           ]
         : this.view === "relations"
         ? [
@@ -4134,7 +4177,7 @@ class YaziModal extends Modal {
         : this.view === "relations"
         ? this.t("ui.noRelations", "(nothing links to or from this note)")
         : this.view === "views"
-        ? this.t("ui.noViews", "(no saved views yet — run a search, then press ,s to save it)")
+        ? this.t("ui.noViews", "(no saved views yet — run a search with gt / gf / gd, then press s in the results to save it)")
         : this.t("ui.noItems", "(no items)");
       this.mainEl.createDiv({ cls: "yazi-empty", text: hint });
       return;
@@ -5695,13 +5738,16 @@ module.exports = class YaziExplorer extends Plugin {
     return this.views().find((v) => v.key === key) || null;
   }
 
-  // 同名視為「覆寫」：組了一次更好的條件想存回同一個名字是常事，
-  // 逼人先刪再存只是多一步。回傳 true 代表蓋掉了既有的。
+  /*
+   * 先比 id（改名既有那一筆），再比名字（同名＝覆寫：組了一次更好的條件想存回同一個
+   * 名字是常事，逼人先刪再存只是多一步）。回傳 true 代表蓋掉了既有的。
+   */
   async saveView(view) {
     const list = this.views();
-    const at = list.findIndex((v) => v.name === view.name);
+    let at = list.findIndex((v) => v.id === view.id);
+    if (at < 0) at = list.findIndex((v) => v.name === view.name);
     const replaced = at >= 0;
-    if (replaced) view.key = list[at].key;   // 蓋掉時保留原本的快捷字母
+    if (replaced) view.key = view.key || list[at].key;   // 蓋掉時保留原本的快捷字母
     if (replaced) list[at] = view;
     else list.push(view);
     this.data.views = list;
