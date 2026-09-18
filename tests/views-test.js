@@ -54,7 +54,7 @@ const mk = (over) => Object.assign(Object.create(YaziModal.prototype), {
   sortCfg: () => ({ field: "natural", reverse: false, foldersFirst: true }),
   buildSearchList() { this.built = (this.built || 0) + 1; },
   buildList() { if (this.view === "views") this.listItems = this.collectViews(); },
-  endInput() {}, ensureIndex: () => false,
+  endInput() { this.mode = "nav"; }, ensureIndex: () => false, flushSearch() {},
   inputEl: { value: "", focus() {} }, inputWrapEl: { show() {}, hide() {} },
   refreshSuggest() {},
   facetLabel: (f) => f.id + ":" + f.value,
@@ -197,6 +197,47 @@ e.handleKey(ev("e"));
 eq("e：回到組合卡，條件與關鍵字都在",
    [e.view, e.composing, e.mode, e.searchQuery, e.facets.length],
    ["search", true, "search", "報表", 1]);
+
+eq("e：進入編輯模式，記住在編輯哪一筆", e.editingView && e.editingView.id, "v1");
+
+/* 改條件後 Enter：寫回同一筆、退回檢視清單，不是存新的、也不是進結果頁 */
+e.facets.push({ id: "prio", value: "P1" });
+e.searchQuery = "改過的字";
+e.handleKey(ev("Enter"));
+eq("Enter：回到檢視清單、離開編輯模式", [e.view, e.editingView], ["views", null]);
+eq("仍然只有一筆，名字不變、條件更新",
+   e.plugin.views().map((v) => [v.id, v.name, v.query, v.facets.map((f) => f.id)]),
+   [["v1", "進行中", "改過的字", ["status", "prio"]]]);
+
+/* Ctrl+Enter：先看完整結果（不存、仍在編輯）→ 結果頁 s 存回同一筆 */
+const pv = mk({ view: "views" });
+pv.plugin.data.views = [{ id: "v1", name: "進行中", kind: "file", query: "報表", facets: [{ id: "status", value: "3" }], scopePath: "" }];
+pv.buildList();
+pv.handleKey(ev("e"));
+pv.facets.push({ id: "prio", value: "P1" });
+pv.handleKey(Object.assign(ev("Enter"), { ctrlKey: true }));
+eq("Ctrl+Enter：進結果頁、還在編輯、還沒存",
+   [pv.view, pv.composing, pv.editingView && pv.editingView.id, pv.plugin.views()[0].facets.length], ["search", false, "v1", 1]);
+pv.handleKey(ev("s"));
+eq("結果頁 s：存回同一筆並回清單", [pv.view, pv.editingView, pv.plugin.views().length, pv.plugin.views()[0].facets.length],
+   ["views", null, 1, 2]);
+
+/* Esc 放棄：條件不變 */
+const e2 = mk({ view: "views" });
+e2.plugin.data.views = [{ id: "v1", name: "進行中", kind: "file", query: "報表", facets: [{ id: "status", value: "3" }], scopePath: "" }];
+e2.buildList();
+e2.handleKey(ev("e"));
+e2.facets.push({ id: "prio", value: "P1" });
+e2.escapeBack();
+eq("Esc：回到檢視清單、放棄修改", [e2.view, e2.editingView, e2.plugin.views()[0].facets.length], ["views", null, 1]);
+
+/* R 改名：條件、字母不動 */
+const rn = mk({ view: "views", promptFor: (l, i, cb) => cb("新名字") });
+rn.plugin.data.views = [{ id: "v1", name: "舊名字", key: "w", kind: "text", query: "報表", facets: [{ id: "status", value: "3" }], scopePath: "x" }];
+rn.buildList();
+rn.handleKey(ev("R"));
+eq("R：只改名字", rn.plugin.views().map((v) => [v.id, v.name, v.key, v.kind, v.query, v.facets.length, v.scopePath]),
+   [["v1", "新名字", "w", "text", "報表", 1, "x"]]);
 
 /* gd 沒有組合卡（見 openSearch），編輯它只回到輸入列 */
 const ed = mk({ view: "views" });

@@ -174,10 +174,11 @@ r  Read later            full text · "reading" · in 400 QuickNote
 ```
 
 A view stores the **words, conditions and scope — not the results**, so it is re-run every time and
-always reflects the vault as it is now. In the list, `Enter` runs one, `e` loads it back into the
-search card so you can change its conditions (`s` under the same name then replaces it), `x`
-deletes it, and `m` plus a letter assigns a shortcut — after which that letter runs it straight from
-the list.
+always reflects the vault as it is now. In the list, `Enter` runs one; `e` opens it in the search
+card for editing — the card says which view you are editing, `Enter` saves the changed conditions
+back to *that* view and returns to the list, `Esc` discards; `R` renames it; `x` deletes it (after a
+`y`); and `m` plus a letter assigns a shortcut — after which that letter runs it straight from the
+list.
 
 Saving the *same conditions* again does not create a twin: it asks whether to rename the existing
 view instead, and `y` opens the name box with the old name filled in. Saving under an existing

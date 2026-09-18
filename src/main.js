@@ -470,6 +470,7 @@ const HELP = [
   ["gv", "help.list.gv"],
   ["(search results) s", "help.list.vsave"],
   ["(views) e", "help.list.vedit"],
+  ["(views) R", "help.list.vrename"],
   ["(views) m + letter", "help.list.vassign"],
   ["(in a list) x", "help.list.x"],
   ["(in a list) q / Esc", "help.list.back"],
@@ -574,6 +575,7 @@ class YaziModal extends Modal {
      * 往下鑽了之後 h 照舊是上一層資料夾，走回落地點再按 h 才退層。
      */
     this.landing = null;
+    this.editingView = null; // 組合卡正在編輯哪一筆儲存的檢視（e 進來的）；null ＝一般搜尋
     /*
      * 層堆疊。Esc／q／h 是「退回上一層」，而「上一層」有很多種：從檔案檢視按 b 進書籤、
      * 從書籤跳進某個資料夾、從檢視清單執行一個搜尋、從搜尋結果按 go 看大綱、
@@ -1685,6 +1687,7 @@ class YaziModal extends Modal {
   popLayer() {
     const s = this.layers.pop();
     if (!s) return false;
+    this.editingView = null;   // 離開組合卡（不管是存了還是 Esc）就不再是編輯模式
     const idx = s.listIndex;
     Object.assign(this, s);
     /*
@@ -2249,8 +2252,10 @@ class YaziModal extends Modal {
       const label = (name || "").trim();
       if (!label) return;
       if (!this.plugin) return;
+      // 改名既有那一筆時以它為底（條件照舊）——從清單按 R 進來時，搜尋狀態根本不是它的。
       // id 不能只靠 Date.now()：同一毫秒存兩份會撞號，第二份會被當成「覆寫第一份」
-      const view = Object.assign(this.currentViewDef(), {
+      const base = existing ? Object.assign({}, existing) : this.currentViewDef();
+      const view = Object.assign(base, {
         id: existing ? existing.id : "v" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
         name: label,
         key: existing ? existing.key : null,
@@ -2317,10 +2322,39 @@ class YaziModal extends Modal {
    */
   editView(v) {
     if (!v) return;
-    this.runView(v);
-    if (this.view !== "search") return;   // 索引還在建，runView 已經接手畫面了
+    this.runView(v);                        // 推一層（檢視清單）、把條件灌回搜尋狀態
+    if (this.view !== "search") return;     // 索引還在建，runView 已經接手畫面了
+    /*
+     * 進入「編輯這一筆」模式：組合卡標題會寫明在編輯誰，Enter ＝把條件寫回那一筆並退回
+     * 清單、Esc ＝放棄。不進結果頁 —— 組合卡本來就有即時筆數與前幾筆預覽，改完就存
+     * 才符合「編輯」的用途；之前那條「改完 Enter 看結果、再 s 存」會存成另一筆。
+     */
+    this.editingView = v;
     this.reopenComposer();
-    new Notice(this.t("notice.viewEditing", "Editing “{name}” — save it with s under the same name", { name: v.name }));
+  }
+
+  /* 編輯模式的 Enter：條件寫回原本那一筆（名字、id、字母都不動），退回檢視清單 */
+  saveEditedView() {
+    const v = this.editingView;
+    this.editingView = null;
+    if (!v) return;
+    const view = Object.assign({}, v, this.currentViewDef());
+    this.endInput();
+    // saveView 的清單更動是同步的，await 只等落地；這裡不等，畫面先退回去
+    if (this.plugin) this.plugin.saveView(view);
+    new Notice(this.t("notice.viewReplaced", "View updated: {name}", { name: v.name }));
+    if (this.popLayer()) return;
+    // 沒有上一層（不該發生）：至少別卡在組合卡裡
+    this.composing = false;
+    this.buildSearchList();
+    this.render();
+  }
+
+  // 檢視清單裡按 R：改名（條件、id、字母都不動）
+  renameView() {
+    const item = this.listCurrent();
+    if (!item || !item.viewDef) return;
+    this.promptViewName(item.viewDef);
   }
 
   /*
@@ -2328,6 +2362,18 @@ class YaziModal extends Modal {
    * 是搜尋最常見的下一步，不該逼人從頭打一次。
    * gd（找資料夾）沒有組合卡（見 openSearch），那就只是回到底部的輸入列。
    */
+  /*
+   * 送出組合卡：卡收起來，版面讓給結果。條件與關鍵字都留著，i/Tab 可以回來改。
+   * 建議列是組合卡的一部分，一起收 —— 留著的話左欄會變成「加條件」而不是圖例。
+   */
+  showResults() {
+    this.sug = null;
+    this.sugField = null;
+    this.composing = false;
+    this.endInput();
+    this.render();
+  }
+
   reopenComposer() {
     this.mode = "search";
     this.composing = this.searchKind !== "dir";
@@ -3238,18 +3284,22 @@ class YaziModal extends Modal {
         this.flushSearch();
         // Ctrl+Enter 才是「直接開」。單純 Enter 是確定搜尋字串：收起輸入列、
         // 結果留著，焦點交給清單，接著就能用 j/k 移動、l/o 開啟、/ 再過濾。
+        /*
+         * 編輯檢視中：Enter ＝存回去、Ctrl+Enter ＝先看完整結果（不存、仍在編輯）。
+         * 組合卡上的筆數與前幾筆是快速確認；要逐筆看才需要進結果頁，那裡 s 存回、
+         * i 回卡片、Esc 放棄。一般搜尋的 Ctrl+Enter 是「直接開第一筆」，編輯時沒有這個需求。
+         */
+        if (this.editingView) {
+          if (ev.ctrlKey) this.showResults();
+          else this.saveEditedView();
+          return;
+        }
         if (ev.ctrlKey) {
           this.commitSearch(true);
           return;
         }
         if (!this.listItems.length) return;
-        // 送出：組合卡收起來，版面讓給結果。條件與關鍵字都留著，i/Tab 可以回來改。
-        // 建議列是組合卡的一部分，一起收 —— 留著的話左欄會變成「加條件」而不是圖例
-        this.sug = null;
-        this.sugField = null;
-        this.composing = false;
-        this.endInput();
-        this.render();
+        this.showResults();
         return;
       }
       if (key === "Escape") { this.swallow(ev); this.escapeBack(); return; }
@@ -3479,11 +3529,16 @@ class YaziModal extends Modal {
         // R ＝改名，跟檔案檢視的 R 同一顆（那邊改檔名，這邊改書籤自己的名字）
         case "R":
           if (this.view === "bookmarks") this.renameBookmark();
+          else if (this.view === "views") this.renameView();
           break;
         // 搜尋結果裡的 s ＝把這次搜尋存成檢視。只在搜尋結果有意義，
         // 其他清單（分頁、書籤…）沒有「條件」可存
         case "s":
-          if (this.view === "search") this.saveCurrentView();
+          // 編輯檢視中從結果頁按 s ＝存回原本那一筆，不是存新的
+          if (this.view === "search") {
+            if (this.editingView) this.saveEditedView();
+            else this.saveCurrentView();
+          }
           break;
         /*
          * , 前綴在清單檢視裡原本整個沒接 —— 於是 ,p（切換渲染預覽）在搜尋結果裡
@@ -3849,7 +3904,11 @@ class YaziModal extends Modal {
     const what = this.searchKind === "text" ? this.t("ui.searchTextTitle", "Full-text search")
       : this.searchKind === "dir" ? this.t("ui.searchDirTitle", "Folder search")
       : this.t("ui.searchFileTitle", "File name search");
-    this.csTitleEl.setText("🔍 " + what + (this.indexing ? "　·　" + this.t("ui.indexing", "indexing…") : ""));
+    // 編輯檢視時標題換成「正在編輯 X」＋三顆鍵的去向 —— 同一張卡兩種用途，不標清楚就會按錯 Enter
+    const title = this.editingView
+      ? "✏️ " + this.t("ui.editingView", "Editing view “{name}” — Enter saves · Ctrl+Enter previews the results · Esc discards", { name: this.editingView.name })
+      : "🔍 " + what;
+    this.csTitleEl.setText(title + (this.indexing ? "　·　" + this.t("ui.indexing", "indexing…") : ""));
 
     // 輸入列搬進查詢盒。**只在還沒搬進來時動** —— 每次重繪都搬的話，
     // 元素被拔起來重插，焦點與中文組字狀態都會掉
@@ -4068,7 +4127,8 @@ class YaziModal extends Modal {
         : this.view === "views"
         ? [
             ["Enter / l / o", this.t("legend.viewRun", "run this search again")],
-            ["e", this.t("legend.viewEdit", "edit its conditions, then s saves over the same name")],
+            ["e", this.t("legend.viewEdit", "edit its conditions in the search card; Enter saves back to this view")],
+            ["R", this.t("legend.viewRename", "rename it")],
             ["m + " + this.t("ui.letter", "letter"), this.t("legend.assignLetter", "assign a letter (m + Backspace clears it)")],
             [this.t("ui.letter", "letter"), this.t("legend.viewLetter", "run that view straight away")],
             // 這裡刻意不列 s：那顆鍵只在搜尋結果裡有效，列在這邊會變成「按了沒反應」。
@@ -4884,6 +4944,10 @@ class YaziModal extends Modal {
     if (this.searchQuery && this.view === "search") bits.push(this.t("ui.query", "query:") + this.searchQuery);
     // 關聯檢視的左欄是上一跳（不是圖例），這三顆鍵就放狀態列常駐
     if (this.view === "relations") bits.push(this.t("ui.relHint", "l enter · o open · h back"));
+    // 編輯檢視時進到結果頁：狀態列要說清楚這不是一般搜尋，以及怎麼存回去
+    if (this.view === "search" && this.editingView) {
+      bits.push(this.t("ui.editingViewResults", "editing “{name}” · s saves · i back to the card · Esc discards", { name: this.editingView.name }));
+    }
     this.hintEl.setText(bits.join("　") + "　" + this.t("ui.help", "? help"));
   }
 }
