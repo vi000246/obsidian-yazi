@@ -125,6 +125,15 @@ const PREVIEW_SEEK_LINES = 5;   // J / K 一次捲幾行（＝ yazi 的 seek 5 /
 const OUTLINE_PAD = 6;          // 大綱跳到標題時，標題上緣留幾 px，不要貼死在欄頂
 
 /*
+ * 這些前綴的標籤在 UI 裡一律濾掉（搜尋候選、預覽面板都是）。
+ *
+ * 它們是**筆記系統自動掛上去的**分類標籤，不是人手選的。留著的話它們靠數量穩坐
+ * 候選清單前幾名，把真正有意義的自由標籤擠到看不見的地方 —— 標籤是照使用量排序的，
+ * 所以雜訊越多筆、傷害越大。它們表達的那條軸通常已經有 frontmatter 欄位可以篩了。
+ */
+const AUTO_TAG_PREFIXES = ["work/"];
+
+/*
  * 捲預覽欄的 Ctrl 組合：vim 捲 buffer 的那一套原封照搬。
  * 平鍵的 d / u 是「游標半頁」（Surfingkeys），不衝突——要捲預覽就是加 Ctrl 的那個。
  */
@@ -404,6 +413,7 @@ const HELP = [
   ["help.sec.bookmarks"],
   ["m", "help.bm.m"],
   ["M", "help.bm.M"],
+  ["(bookmark list) R", "help.bm.rename"],
   ["' + letter", "help.bm.jump"],
   ["(bookmark list) m + letter", "help.bm.assign"],
   ["help.sec.tabs"],
@@ -1835,12 +1845,18 @@ class YaziModal extends Modal {
     });
     return marks.map((m) => {
       const f = this.app.vault.getAbstractFileByPath(m.path);
+      // 自己取的名字優先；沒取過的（舊書籤）照原本顯示檔名
+      const title = m.name || (f ? f.name || this.t("ui.vaultRoot", "(vault root)") : m.path.split("/").pop());
       return {
-        label: (m.key ? m.key : "·") + "　" + (f ? f.name || this.t("ui.vaultRoot", "(vault root)") : m.path.split("/").pop()),
+        // 快捷字母放 icon 欄、名稱獨佔第一行、路徑放第二行 —— 擠成一行時
+        // 自己取的名字會先被截掉，而那正是用來認它的東西
+        icon: m.key || "·",
+        label: title,
         sub: m.path + (f ? "" : "　" + this.t("ui.gone", "(gone)")),
         file: f && !isFolder(f) ? f : null,
         path: m.path,
         key: m.key,
+        title,
         missing: !f,
       };
     });
@@ -2053,10 +2069,8 @@ class YaziModal extends Modal {
       new Notice(this.t("notice.viewNeedsSearch", "Run a search first, then save it as a view"));
       return;
     }
-    this.askConfirm(
-      this.t("confirm.saveView", "Save this search as a view?"),
-      () => this.promptViewName()
-    );
+    // 不另外問 y/n：接下來要打名字並按 Enter，那本身就擋掉了誤按 s 的情況
+    this.promptViewName();
   }
 
   promptViewName() {
@@ -2092,7 +2106,9 @@ class YaziModal extends Modal {
       const kind = { text: this.t("ui.kindText", "full text"), dir: this.t("ui.kindDir", "folders") }[v.kind]
         || this.t("ui.kindFile", "file names");
       return {
-        label: (v.key ? v.key : "·") + "　" + v.name,
+        // 快捷字母放在 icon 欄（跟其他清單對齊），名稱獨佔第一行，條件放第二行
+        icon: v.key || "·",
+        label: v.name,
         sub: kind + (bits.length ? "　·　" + bits.join("　") : ""),
         viewDef: v,
       };
@@ -2322,23 +2338,49 @@ class YaziModal extends Modal {
       new Notice(this.t("notice.nothingToBookmark", "Nothing to bookmark"));
       return;
     }
-    const label = target.path === "/" ? this.t("ui.vaultRoot", "(vault root)") : target.path;
-    // m / M 就在 j/k 旁邊，很容易誤按；問一聲比事後去書籤清單裡找出來刪掉便宜
-    this.askConfirm(
-      this.t("confirm.bookmark", "Bookmark “{name}”?", { name: label }),
-      () => this.doAddBookmark(target.path, label)
-    );
+    /*
+     * 先問名字再存。兩個作用：
+     *   1. 書籤是拿來認的東西，而檔名往往不是你腦中叫它的名字（日記檔名是日期、
+     *      task 檔名帶著 OB-19 前綴）
+     *   2. m / M 就在 j/k 旁邊很容易誤按，要打字並按 Enter 才會寫進去，
+     *      誤按自然就存不到東西 —— 不必再多問一次 y/n
+     * 預設值＝檔名（不含副檔名），直接 Enter 就是原本的行為。
+     */
+    const suggested =
+      target.path === "/"
+        ? this.t("ui.vaultRoot", "(vault root)")
+        : target.basename || target.name || target.path;
+    this.promptFor(this.t("prompt.bookmarkName", "Bookmark as: "), suggested, async (name) => {
+      const title = (name || "").trim();
+      if (!title) return;   // 空白＝取消
+      this.doAddBookmark(target.path, title);
+    });
   }
 
-  doAddBookmark(path, label) {
-    this.plugin.addBookmark(path).then((added) => {
+  doAddBookmark(path, title) {
+    this.plugin.addBookmark(path, title).then((added) => {
       new Notice(added
-      ? this.t("notice.bookmarkAdded", "Bookmarked: {path}", { path: label })
-      : this.t("notice.bookmarkExists", "Already bookmarked: {path}", { path: label }));
+      ? this.t("notice.bookmarkAdded", "Bookmarked: {name}", { name: title })
+      // 已經有這個路徑的書籤：改成換名字，比丟一句「已經加過了」有用
+      : this.t("notice.bookmarkRenamed", "Bookmark renamed: {name}", { name: title }));
       if (this.view === "bookmarks") {
         this.buildList();
         this.render();
       }
+    });
+  }
+
+  // 書籤清單裡按 e：改名字（路徑不動）
+  renameBookmark() {
+    const item = this.listCurrent();
+    if (!item || !this.plugin) return;
+    this.promptFor(this.t("prompt.bookmarkName", "Bookmark as: "), item.title || "", async (name) => {
+      const title = (name || "").trim();
+      if (!title) return;
+      await this.plugin.addBookmark(item.path, title);   // 已存在＝改名
+      this.buildList();
+      this.render();
+      new Notice(this.t("notice.bookmarkRenamed", "Bookmark renamed: {name}", { name: title }));
     });
   }
 
@@ -3219,6 +3261,10 @@ class YaziModal extends Modal {
           // 檢視清單裡的 e ＝把這個檢視載回組合卡去改條件（改完 s 用同名存回去）
           if (this.view === "views") this.editView((this.listCurrent() || {}).viewDef);
           break;
+        // R ＝改名，跟檔案檢視的 R 同一顆（那邊改檔名，這邊改書籤自己的名字）
+        case "R":
+          if (this.view === "bookmarks") this.renameBookmark();
+          break;
         // 搜尋結果裡的 s ＝把這次搜尋存成檢視。只在搜尋結果有意義，
         // 其他清單（分頁、書籤…）沒有「條件」可存
         case "s":
@@ -3779,6 +3825,7 @@ class YaziModal extends Modal {
         : this.view === "bookmarks"
         ? [
             ["Enter / l / o", this.t("legend.jump", "jump there")],
+            ["R", this.t("legend.renameBookmark", "rename this bookmark")],
             ["m + " + this.t("ui.letter", "letter"), this.t("legend.assignLetter", "assign a letter (m + Backspace clears it)")],
             [this.t("ui.letter", "letter"), this.t("legend.letterJump", "jump straight to that bookmark")],
             ["x", this.t("legend.deleteBookmark", "delete the bookmark")],
@@ -3874,7 +3921,13 @@ class YaziModal extends Modal {
         row.addClass("yazi-outline-d" + (item.depth || 0));
       }
       if (info && info.dim) row.addClass("is-fm-dim");
-      row.createSpan({ cls: "yazi-icon", text: item.active ? "●" : info ? info.icon : "·" });
+      /*
+       * 檢視與書籤是兩行的：名稱一行、說明（搜尋條件／路徑）一行。
+       * 這兩種清單的名稱是**使用者自己取的**，擠成一行時先被截掉的就是它，
+       * 而那正是用來認出「這是什麼」的東西。
+       */
+      if (this.view === "views" || this.view === "bookmarks") row.addClass("is-twoline");
+      row.createSpan({ cls: "yazi-icon", text: item.icon || (item.active ? "●" : info ? info.icon : "·") });
       const nameEl = row.createSpan({ cls: "yazi-name", text: item.label });
       if (item.missing) nameEl.addClass("is-missing");
       if (item.sub) row.createSpan({ cls: "yazi-sub", text: item.sub });
@@ -4286,7 +4339,18 @@ class YaziModal extends Modal {
         const info = fmInfo(file);
         let raw = text;
         if (info) {
-          this.renderFmPanel(el, info);
+          /*
+           * ⚠️ frontmatter 面板不能拖垮整個預覽。
+           * 這裡是 cachedRead().then() 裡面，沒有人接 —— 面板丟出例外的話，下面的
+           * <pre> 根本不會被建、markdown 也不會排程渲染，畫面上看起來就是
+           * 「某些筆記突然不渲染了」，而且只有 console 看得到。
+           * （實際發生過：renderFmPanel 呼叫了一個不存在的函式。）
+           */
+          try {
+            this.renderFmPanel(el, info);
+          } catch (e) {
+            console.error("[yazi-explorer] frontmatter panel failed", e);
+          }
           raw = stripFrontmatter(this.app, file, text);
         }
         /*
@@ -4664,6 +4728,25 @@ function stripForRender(text) {
 /* ── 搜尋條件用的小工具 ── */
 
 // 一個檔案身上所有標籤（frontmatter 的 tags ＋ 內文的 #tag），一律不帶 #
+/*
+ * frontmatter 的 tags 值 → 乾淨的標籤陣列。
+ *
+ * YAML 那一欄可能長成清單、單一字串，或空白／逗號分隔的一串；`#` 前綴有人加有人不加。
+ * 這裡全部收斂成同一種形狀，並套用 AUTO_TAG_PREFIXES（理由見那個常數）。
+ */
+function userTags(value) {
+  const out = [];
+  const add = (t) => {
+    const s = String(t == null ? "" : t).replace(/^#/, "").trim();
+    if (s && out.indexOf(s) < 0) out.push(s);
+  };
+  if (Array.isArray(value)) value.forEach(add);
+  else if (value != null && typeof value !== "object") {
+    for (const part of String(value).split(/[,\s]+/)) add(part);
+  }
+  return out.filter((t) => !AUTO_TAG_PREFIXES.some((p) => t.startsWith(p)));
+}
+
 function fileTags(app, f) {
   try {
     const c = app.metadataCache.getFileCache(f);
@@ -4684,7 +4767,7 @@ function fileTags(app, f) {
      * 標籤是「照使用量排序」的，所以雜訊越多筆，傷害越大。
      * 它們表達的那條軸已經有「筆記 type」這個條件了，不會漏掉任何篩選能力。
      */
-    return out.filter((t) => !t.startsWith("work/"));
+    return out.filter((t) => !AUTO_TAG_PREFIXES.some((p) => t.startsWith(p)));
   } catch (e) {
     return [];
   }
@@ -5366,10 +5449,18 @@ module.exports = class YaziExplorer extends Plugin {
     return this.bookmarks().find((b) => b.key === key) || null;
   }
 
-  // 回傳 false 代表已經在書籤裡（呼叫端負責提示），不重複加
-  async addBookmark(path) {
-    if (this.findBookmark(path)) return false;
-    this.data.bookmarks.push({ path, key: null, added: Date.now() });
+  /*
+   * 回傳 true ＝新增、false ＝這個路徑本來就有書籤（那就改它的名字）。
+   * 「已經加過了就什麼都不做」對使用者沒有用 —— 會再按一次 m 的人多半就是想改名。
+   */
+  async addBookmark(path, name) {
+    const existing = this.findBookmark(path);
+    if (existing) {
+      if (name) existing.name = name;
+      await this.saveData(this.data);
+      return false;
+    }
+    this.data.bookmarks.push({ path, name: name || null, key: null, added: Date.now() });
     await this.saveData(this.data);
     return true;
   }

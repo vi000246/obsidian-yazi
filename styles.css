@@ -97,6 +97,30 @@
   opacity: 0.72;
 }
 
+/* 兩行的列（儲存的檢視）：第二行是說明文字，換行到自己一行並對齊到圖示欄之後。
+   單行時 .yazi-sub 會被 .yazi-name 擠到只剩幾個字，而那一行正是要讀的內容。 */
+.yazi-row.is-twoline {
+  flex-wrap: wrap;
+  align-items: baseline;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.yazi-row.is-twoline .yazi-name {
+  flex: 1 1 auto;
+}
+
+.yazi-row.is-twoline .yazi-sub {
+  flex: 1 1 100%;
+  margin-left: calc(1.3em + 6px);   /* 圖示欄寬 + flex gap，讓第二行與名稱切齊 */
+  /* 單行版是 overflow:hidden + ellipsis（一行放不下就截斷）；兩行版要的是相反的
+     行為 —— 條件長就讓它折行，那正是要讀完的東西 */
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  opacity: 0.8;
+}
+
 /* 關聯（gr）的分組標題。不是清單項目 —— 游標不會停在上面 */
 .yazi-group {
   padding: 8px 10px 2px;

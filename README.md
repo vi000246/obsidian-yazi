@@ -214,8 +214,10 @@ Copy paths with `cc` (absolute), `cd` (its folder), `cf` (file name), `cn` (name
 
 ### Bookmarks, tabs and frequently used
 
-`m` bookmarks the item under the cursor, `M` the current folder. In the bookmark list, `m` plus a
-letter assigns a shortcut, and then `'` plus that letter jumps there from anywhere.
+`m` bookmarks the item under the cursor, `M` the current folder. Both ask what to call it, with the
+file name filled in — bookmarks are for recognising, and a file called `2026-09-18.md` is not how you
+think of it. In the bookmark list, `R` renames one, `m` plus a letter assigns a shortcut, and then
+`'` plus that letter jumps there from anywhere.
 
 `T` lists open tabs, `b` bookmarks, `rf` recent files, and `z` shows **frequently used** — folders you
 visit and files you open, ranked together by how often and how recently.

@@ -22,7 +22,7 @@ const SRC = path.join(__dirname, "..", "src", "main.js");
 const EXPOSED = [
   "absPath", "wheelPx",
   "PENDING_MENUS", "PREVIEW_SCROLL_KEYS", "HALF_PAGE", "HELP", "SORTS",
-  "stripPluginNoise", "stripForRender", "fmInfo",
+  "stripPluginNoise", "stripForRender", "fmInfo", "userTags", "fileTags",
   "YaziModal", "isFolder", "sortFiles",
 ];
 
