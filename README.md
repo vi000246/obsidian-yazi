@@ -24,7 +24,7 @@ makes three things awkward, and this plugin exists for those three:
 |---|---|---|
 | **Seeing where you are** | one narrow column; deep folders scroll sideways | **miller columns** — parent / current / preview, three levels of context at all times |
 | **Deciding “is this the file?”** | file names only | **live preview** beside the list: rendered markdown, tables, images, frontmatter |
-| **Getting there** | click, scroll, expand | `j` `k` `h` `l`, fuzzy file/folder search, full-text search, bookmarks, frequently-used |
+| **Getting there** | click, scroll, expand | `j` `k` `h` `l`, fuzzy file/folder search, full-text search, bookmarks, most-visited |
 
 It is not a replacement for Quick Switcher, which is excellent at *“I know the name.”* This is for
 *“I want to look around”* — browsing, comparing, moving files, and acting on a batch of them.
@@ -191,7 +191,7 @@ plugin, where these work well as `,`-sequences:
 | Open file explorer | where you are |
 | Open saved views | the view list |
 | Open outline / Open relations | the current note's headings / links |
-| Open tab list · bookmarks · recent files · frequently used | those lists |
+| Open tab list · bookmarks · recent files · most visited | those lists |
 | Search: full text · file names · folders | straight into that search |
 
 `Esc` closes the topmost layer. If you walked into a list from the file view, it takes you back
@@ -216,15 +216,17 @@ renames, `D` deletes to the system trash (it asks first, and deletes the whole s
 Copy paths with `cc` (absolute), `cd` (its folder), `cf` (file name), `cn` (name without extension),
 `cr` (vault-relative — what `[[links]]` use).
 
-### Bookmarks, tabs and frequently used
+### Bookmarks, tabs and most visited
 
 `m` bookmarks the item under the cursor, `M` the current folder. Both ask what to call it, with the
 file name filled in — bookmarks are for recognising, and a file called `2026-09-18.md` is not how you
 think of it. In the bookmark list, `R` renames one, `m` plus a letter assigns a shortcut, and then
 `'` plus that letter jumps there from anywhere.
 
-`T` lists open tabs, `b` bookmarks, `rf` recent files, and `z` shows **frequently used** — folders you
-visit and files you open, ranked together by how often and how recently.
+`T` lists open tabs, `b` bookmarks, `rf` recent files (newest first), and `z` shows **most visited** —
+folders you enter and files you open, ranked together by how often × how recently. The two are easy
+to confuse, so: `rf` is time only and files only; `z` counts visits, includes folders, and lets what
+you stopped using sink.
 
 ### Opening things outside Obsidian
 

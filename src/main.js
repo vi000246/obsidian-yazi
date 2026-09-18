@@ -2350,7 +2350,7 @@ class YaziModal extends Modal {
         this.buildList();
         this.render();
       });
-      new Notice(this.t("notice.frecencyRemoved", "Removed from frequently used: {path}", { path: item.path }));
+      new Notice(this.t("notice.frecencyRemoved", "Removed from most visited: {path}", { path: item.path }));
       return;
     }
 
@@ -3824,7 +3824,7 @@ class YaziModal extends Modal {
         : this.view === "views"
         ? this.t("ui.titleViews", "Saved views")
         : { tabs: this.t("ui.titleTabs", "Tabs"), bookmarks: this.t("ui.titleBookmarks", "Bookmarks"),
-            recent: this.t("ui.titleRecent", "Recent"), frecency: this.t("ui.titleFrecency", "Frequently used") }[
+            recent: this.t("ui.titleRecent", "Recent"), frecency: this.t("ui.titleFrecency", "Most visited") }[
             this.view
           ] || "";
     this.parentEl.empty();
@@ -3870,7 +3870,7 @@ class YaziModal extends Modal {
         ? [
             ["Enter / l / o", this.t("legend.enterOrOpen", "folder → go there; file → open")],
             ["t", this.t("legend.newTab", "open in a new tab")],
-            ["x", this.t("legend.removeFrecency", "remove it from frequently used")],
+            ["x", this.t("legend.removeFrecency", "remove it from most visited")],
             ["/", this.t("legend.refineShort", "filter within the results")],
             ["（×N）", this.t("legend.frecencyCount", "how often you opened it; ranking is count × time decay")],
           ]
@@ -5077,12 +5077,12 @@ module.exports = class YaziExplorer extends Plugin {
     });
     this.addCommand({
       id: "open-recent",
-      name: this.t("cmd.openRecent", "Open recent files"),
+      name: this.t("cmd.openRecent", "Open recent files (newest first)"),
       callback: () => this.openExplorer("recent"),
     });
     this.addCommand({
       id: "open-frecency",
-      name: this.t("cmd.openFrecency", "Open frequently used"),
+      name: this.t("cmd.openFrecency", "Open most visited (folders and files)"),
       callback: () => this.openExplorer("frecency"),
     });
     this.addCommand({
