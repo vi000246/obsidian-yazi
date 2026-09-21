@@ -91,9 +91,17 @@ and from any list (search results, bookmarks), and `h` takes you back to where y
 | | |
 |---|---|
 | `/` | filter the folder you are in |
-| `gf` | fuzzy search file names and frontmatter `aliases`, whole vault |
-| `gd` | fuzzy search folder names |
+| `gf` | fuzzy search files, whole vault — matches the whole path; file name and frontmatter `aliases` hits rank first |
+| `gd` | fuzzy search folders, whole vault — matches the whole path; folder-name hits rank first |
 | `gt` | full-text search, with the matching lines shown in the preview |
+
+A space between words means AND — every word has to match, in `gt`, `gf` and `gd` alike. That is
+how you narrow a folder search: `projects notes` keeps only what matches both.
+
+Results are ranked by relevance, and **search keeps its own sort setting**, separate from the one the
+file browser uses. It defaults to `natural`, which means "leave the ranking alone" — otherwise a
+"sort by created time" you picked while browsing files would silently re-order every search result and
+throw the ranking away. Press `S` in a result list to sort search results only.
 
 Search has no syntax to memorise. You type words; **conditions come from a menu**. Press `Tab` in the
 search card to add one — folder, tag, extension, or any frontmatter field you configured. Each

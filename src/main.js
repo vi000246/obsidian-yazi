@@ -73,22 +73,52 @@ function mergeSettings(base, saved) {
 }
 
 /*
- * 模糊比對器。用 Obsidian 公開的 prepareFuzzySearch，排序手感才會跟 Quick Switcher
- * 一致（它回傳 (text) => {score, matches} | null，score 愈大愈相關）。
+ * 單一關鍵字的模糊比對器。用 Obsidian 公開的 prepareFuzzySearch，排序手感才會跟
+ * Quick Switcher 一致（它回傳 (text) => {score, matches} | null，score 愈大愈相關）。
  * 拿不到就退回「小寫子字串」比對 —— 寧可弱一點，也不要整個搜尋功能壞掉。
  */
-function makeMatcher(query) {
+function tokenMatcher(tok) {
   if (typeof prepareFuzzySearch === "function") {
     try {
-      return prepareFuzzySearch(query);
+      return prepareFuzzySearch(tok);
     } catch (e) {}
   }
-  const q = query.toLowerCase();
+  const q = tok.toLowerCase();
   return (text) => {
     const i = text.toLowerCase().indexOf(q);
     return i < 0 ? null : { score: -i, matches: [] };
   };
 }
+
+/*
+ * 關鍵字照空白切開，每段各自比對 —— 跟全文搜尋（searchTextList）的空格語意一致。
+ * 不切的話整串會被當成一個字元序列去比，而路徑裡幾乎沒有空白，
+ * 「再打一個字縮小範圍」這件事在 gf / gd 就根本做不到。
+ */
+function queryTokens(query) {
+  return String(query || "").split(/\s+/).filter(Boolean).map(tokenMatcher);
+}
+
+/*
+ * 把多個 token 比對器合成一個：**全部命中**才算命中（AND），分數相加。
+ * 只有一個 token 就直接回它 —— 單字查詢的排序手感要跟切 token 之前一模一樣。
+ */
+function allOf(toks) {
+  if (!toks.length) return () => ({ score: 0, matches: [] });
+  if (toks.length === 1) return toks[0];
+  return (text) => {
+    let score = 0;
+    const matches = [];
+    for (const m of toks) {
+      const r = m(text);
+      if (!r) return null;
+      score += r.score;
+      if (r.matches) matches.push(...r.matches);
+    }
+    return { score, matches };
+  };
+}
+
 
 /*
  * 判斷是不是資料夾，用 duck typing 而不是 `instanceof TFolder`。
@@ -483,7 +513,7 @@ const HELP = [
   ["gf", "help.search.gf"],
   ["gd", "help.search.gd"],
   ["(while typing) ↑↓ / ^j ^k", "help.search.move"],
-  ["(full text) space", "help.search.and"],
+  ["(while typing) space", "help.search.and"],
   ["(while typing) Enter", "help.search.enter"],
   ["(while typing) ^Enter", "help.search.ctrlEnter"],
   ["(results) i", "help.search.back"],
@@ -899,10 +929,18 @@ class YaziModal extends Modal {
 
   /* ── 檔案樹資料 ── */
 
-  // 資料夾在前、再按名稱排。用 zh-Hant 的 collator，中文檔名才不是照 code point 排。
-  // 排序設定放在 plugin 上並寫進 data.json —— 每次開瀏覽器都要重選會很煩
+  /*
+   * 資料夾在前、再按名稱排。用 zh-Hant 的 collator，中文檔名才不是照 code point 排。
+   * 排序設定放在 plugin 上並寫進 data.json —— 每次開瀏覽器都要重選會很煩。
+   *
+   * **搜尋結果有自己的一份**（sortSearch，預設 natural ＝相關度）。
+   * 共用一份的話，你在檔案瀏覽選的「照建立時間排」會跟著灌進每一次搜尋，
+   * 把 gt / gf / gd 辛苦算出來的相關度（含名稱命中優先）整個重排掉 ——
+   * 而那個順序正是搜尋這個功能本身。兩邊想要的東西不一樣，就不該是同一個設定。
+   */
   sortCfg() {
     const d = this.plugin && this.plugin.data;
+    if (this.view === "search") return (d && d.sortSearch) || { field: "natural", reverse: false, foldersFirst: true };
     return (d && d.sort) || { field: "name", reverse: false, foldersFirst: true };
   }
 
@@ -1305,16 +1343,30 @@ class YaziModal extends Modal {
       return;
     }
 
-    // 比對整個 path 而不是只有檔名 —— 這樣才能用資料夾片段縮小範圍
-    // （例如打 "客製 analysis 盲區"），跟 Quick Switcher 的行為一致。
-    const match = makeMatcher(q);
+    /*
+     * 比對整個 path 而不是只有檔名 —— 這樣才能用資料夾片段縮小範圍
+     * （例如打 "客製 analysis 盲區"），跟 Quick Switcher 的行為一致。
+     *
+     * 但只比 path 在 gd（找資料夾）會壞掉：父資料夾的名字**必然**出現在它所有後代的
+     * path 裡，所以搜 "projects" 會把 Projects/ 底下每一層都撈上來，把真正叫
+     * Projects 的那筆淹掉。那不是「名稱相關」，只是祖先關係。
+     * 解法跟全文搜尋同一招（見 searchTextList 的 nameHit）：名稱命中的排前面。
+     *
+     * 這裡用「**任一** token 命中名稱」而不是 every —— 搜 "projects notes" 時
+     * Projects/notes 的名字只有 notes，用 every 會把你真正要的那筆降級。
+     */
+    const toks = queryTokens(q);
+    const match = allOf(toks);
+    const hitsName = (text) => toks.some((m) => !!m(text));
     const scored = [];
     for (const f of pool) {
       let best = match(f.path);
       let via = null;
+      let nameHit = hitsName(f.name || "");
       /*
        * frontmatter 的 aliases 也算命中，取最高分那個當代表。日記檔名是日期、靠標題
        * 才記得的那種筆記，別名往往才是人腦裡的名字 —— 只比路徑會找不到。
+       * 別名就是名字，所以它命中也算 nameHit。
        */
       for (const a of this.fileAliases(f)) {
         const r = match(a);
@@ -1322,10 +1374,13 @@ class YaziModal extends Modal {
           best = r;
           via = a;
         }
+        if (!nameHit && hitsName(a)) nameHit = true;
       }
-      if (best) scored.push({ f, score: best.score, via });
+      if (best) scored.push({ f, score: best.score, via, nameHit });
     }
-    scored.sort((a, b) => b.score - a.score);
+    // 先分「名稱命中 / 只有路徑命中」兩組，組內才比分數 —— SEARCH_LIMIT 的名額
+    // 也因此優先給名稱命中的那組
+    scored.sort((a, b) => (b.nameHit ? 1 : 0) - (a.nameHit ? 1 : 0) || b.score - a.score);
     this.listItems = scored.slice(0, SEARCH_LIMIT).map(({ f, via }) => this.searchItem(f, via));
   }
 
@@ -1959,8 +2014,13 @@ class YaziModal extends Modal {
   refineList() {
     let arr = this.listItems;
     if (this.listFilter) {
-      const q = this.listFilter.toLowerCase();
-      arr = arr.filter((it) => ((it.label || "") + " " + (it.sub || "")).toLowerCase().includes(q));
+      // 空格＝AND，跟 gt / gf / gd 的關鍵字一致。不切的話空格會去撞 label 與 sub
+      // 中間那個接縫，變成看不懂的命中
+      const qs = this.listFilter.toLowerCase().split(/\s+/).filter(Boolean);
+      arr = arr.filter((it) => {
+        const hay = ((it.label || "") + " " + (it.sub || "")).toLowerCase();
+        return qs.every((t) => hay.includes(t));
+      });
     }
     const cfg = this.sortCfg();
     /*
@@ -2506,7 +2566,8 @@ class YaziModal extends Modal {
   }
 
   saveSort(cfg) {
-    if (this.plugin) this.plugin.setSort(cfg);
+    // 在搜尋結果裡按 S 改的是搜尋的排序，不會動到檔案瀏覽的
+    if (this.plugin) this.plugin.setSort(cfg, this.view === "search");
     if (this.view === "search") this.buildSearchList();
     else if (this.view !== "files") this.buildList();
     new Notice(this.t("notice.sort", "Sort: {value}", { value: this.sortText() }));
@@ -5051,7 +5112,9 @@ class YaziModal extends Modal {
       const cfg = this.sortCfg();
       return {
         key: "S",
-        desc: this.t("menu.sort.desc") + "　·　" + this.t("ui.sortNow") + "：" + this.sortText(),
+        desc: this.t("menu.sort.desc")
+          + (this.view === "search" ? "　·　" + this.t("menu.sort.searchOnly", "(search results only)") : "")
+          + "　·　" + this.t("ui.sortNow") + "：" + this.sortText(),
         items: SORTS.map((s) => [s.k, this.t(s.labelKey) + (cfg.field === s.field ? "　←" : "")]).concat([
           ["S", this.t("menu.sort.reverse")],
           ["d", this.t(cfg.foldersFirst ? "menu.sort.foldersOff" : "menu.sort.foldersOn")],
@@ -5623,6 +5686,11 @@ module.exports = class YaziExplorer extends Plugin {
       { field: "name", reverse: false, foldersFirst: true },
       raw && raw.sort
     );
+    // 搜尋預設 natural ＝不重排，留住相關度（見 YaziModal.sortCfg）
+    this.data.sortSearch = Object.assign(
+      { field: "natural", reverse: false, foldersFirst: true },
+      raw && raw.sortSearch
+    );
     this.data.frecency = (raw && raw.frecency) || {};
     this.addSettingTab(new YaziSettingTab(this.app, this));
     /*
@@ -6000,8 +6068,9 @@ module.exports = class YaziExplorer extends Plugin {
     return this._t ? this._t(key, fallback, vars) : (fallback || key);
   }
 
-  setSort(cfg) {
-    this.data.sort = cfg;
+  setSort(cfg, forSearch) {
+    if (forSearch) this.data.sortSearch = cfg;
+    else this.data.sort = cfg;
     this.saveData(this.data);
   }
 

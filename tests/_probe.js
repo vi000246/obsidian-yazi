@@ -24,6 +24,7 @@ const EXPOSED = [
   "PENDING_MENUS", "PREVIEW_SCROLL_KEYS", "HALF_PAGE", "HELP", "SORTS", "OVERLAYS", "sameViewDef",
   "stripPluginNoise", "stripForRender", "fmInfo", "userTags", "fileTags",
   "YaziModal", "isFolder", "sortFiles",
+  "queryTokens", "allOf",
 ];
 
 let cached = null;

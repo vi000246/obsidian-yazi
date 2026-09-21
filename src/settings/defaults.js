@@ -288,6 +288,8 @@ const DEFAULT_SETTINGS = {
   bookmarks: [],
   frecency: {},
   sort: { field: "name", reverse: false, foldersFirst: true },
+  // 搜尋結果自己一份：natural ＝不重排，留住相關度（見 YaziModal.sortCfg）
+  sortSearch: { field: "natural", reverse: false, foldersFirst: true },
 };
 
 /** 深拷貝一份預設值（呼叫端會就地改，不能共用同一個物件）。 */
