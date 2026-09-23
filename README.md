@@ -31,10 +31,11 @@ It is not a replacement for Quick Switcher, which is excellent at *“I know the
 
 ## Install
 
-Not in the community plugin list yet.
+**From inside Obsidian** (recommended): *Settings → Community plugins → Browse*, search for
+**Yazi Explorer**, then Install and Enable.
 
-**With [BRAT](https://github.com/TfTHacker/obsidian42-brat)** (recommended — you get updates):
-add the beta plugin `vi000246/obsidian-yazi`.
+**With [BRAT](https://github.com/TfTHacker/obsidian42-brat)** (if you want builds before they
+reach the plugin list): add the beta plugin `vi000246/obsidian-yazi`.
 
 **By hand:** download `main.js`, `manifest.json` and `styles.css` from the
 [latest release](https://github.com/vi000246/obsidian-yazi/releases), drop them in
