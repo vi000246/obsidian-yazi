@@ -1,7 +1,7 @@
 {
   "id": "yazi-explorer",
   "name": "Yazi Explorer",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "minAppVersion": "1.4.0",
   "description": "A keyboard-driven file explorer with miller columns and live preview, inspired by yazi and ranger. Fuzzy and full-text search, bookmarks, multi-select, and custom openers.",
   "author": "Logan Lin",

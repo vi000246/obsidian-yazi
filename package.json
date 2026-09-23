@@ -1,6 +1,6 @@
 {
   "name": "obsidian-yazi",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A yazi-style keyboard-driven file explorer for Obsidian: miller columns, live preview, fuzzy search, bookmarks and custom openers.",
   "main": "main.js",
   "private": true,
