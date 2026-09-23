@@ -3919,8 +3919,15 @@ class YaziModal extends Modal {
       else if (key === "o") this.openOutline();
       else if (key === "r") this.openRelations();
       else if (key === "v") this.openList("views");
-      // 背景開新分頁原本是 gf（Surfingkeys 的 gf），gf 讓給「搜檔名」之後搬到 gb
-      else if (key === "b") this.enter("tab-bg");
+      // 背景開新分頁原本是 gf（Surfingkeys 的 gf），gf 讓給「搜檔名」之後搬到 gb。
+      // ⚠️ 開的是「這個檢視的游標」那一筆：清單檢視（搜尋結果、書籤、大綱…）要走
+      //    activateListItem，跟同一份清單裡的 o / t 同一條路。走 enter() 的話
+      //    this.current() 讀的是底下**檔案檢視**的游標，於是在搜尋結果按 gb 開到的
+      //    是「開搜尋前停在哪個檔」，不是眼前反白的那一筆。
+      else if (key === "b") {
+        if (this.view === "files") this.enter("tab-bg");
+        else this.activateListItem("tab-bg");
+      }
       else this.render();
       return;
     }

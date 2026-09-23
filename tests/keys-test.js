@@ -56,5 +56,26 @@ typing.inputEl = { value: "", focus() {} };
 typing.inputWrapEl = { show() {}, hide() {} };
 eq("篩選輸入中：PageDown 不捲預覽", press(typing, "PageDown"), []);
 
+/*
+ * gb ＝背景開新分頁。開的必須是「現在這個檢視的游標」那一筆：
+ * 清單檢視（搜尋結果、書籤、大綱…）走 activateListItem，跟同一份清單裡的 o / t 一致；
+ * 走 enter() 的話讀到的是底下檔案檢視的游標，等於在搜尋結果按 gb 開錯檔。
+ */
+const spy = (view) => {
+  const m = mk(view);
+  m.enter = (mode) => log.push("enter:" + mode);
+  m.activateListItem = (mode) => log.push("list:" + mode);
+  return m;
+};
+const sb = spy("search");
+press(sb, "g");
+eq("搜尋結果：gb → 開清單游標那一筆", press(sb, "b"), ["list:tab-bg"]);
+const bb = spy("bookmarks");
+press(bb, "g");
+eq("書籤清單：gb → 開清單游標那一筆", press(bb, "b"), ["list:tab-bg"]);
+const fb = spy("files");
+press(fb, "g");
+eq("檔案檢視：gb → 開檔案游標那一筆", press(fb, "b"), ["enter:tab-bg"]);
+
 console.log(fail ? "\n" + fail + " 項失敗" : "\n全部通過");
 process.exit(fail ? 1 : 0);
