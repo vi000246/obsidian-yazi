@@ -92,12 +92,19 @@ and from any list (search results, bookmarks), and `h` takes you back to where y
 | | |
 |---|---|
 | `/` | filter the folder you are in |
-| `gf` | fuzzy search files, whole vault — matches the whole path; file name and frontmatter `aliases` hits rank first |
+| `gf` | fuzzy search files, whole vault — matches the whole path; file name and frontmatter `aliases` hits rank first; a task id (`84`, `OB-84`) jumps straight to the note |
 | `gd` | fuzzy search folders, whole vault — matches the whole path; folder-name hits rank first |
 | `gt` | full-text search, with the matching lines shown in the preview |
 
 A space between words means AND — every word has to match, in `gt`, `gf` and `gd` alike. That is
 how you narrow a folder search: `projects notes` keeps only what matches both.
+
+**Task ids in `gf`.** Notes with `type: task` and an `id` like `OB-84` in their frontmatter can be
+reached by id. Type `84` (any prefix), `ob84` or `OB-84` (case and hyphen optional) and press `Enter`:
+if exactly one task has that id, it opens directly; if several do (`OB-84` and `SP-84`), the result list
+opens with those tasks on top. The id comes from the frontmatter, not the file name, and the lookup
+ignores the scope and conditions — ids are unique across the vault. Anything that does not look like
+an id, or matches no task, is an ordinary `gf` search.
 
 Results are ranked by relevance, and **search keeps its own sort setting**, separate from the one the
 file browser uses. It defaults to `natural`, which means "leave the ranking alone" — otherwise a

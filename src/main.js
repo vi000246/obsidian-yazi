@@ -50,6 +50,7 @@ const { parseKeymap } = require("./core/keymap.js");
 const { outlineItems, headingLines } = require("./core/outline.js");
 const { collectRelations } = require("./core/relations.js");
 const { aliasesOf } = require("./core/aliases.js");
+const { parseTaskIdQuery, taskIdOf, matchesTaskId } = require("./core/taskid.js");
 
 /*
  * 存檔進來的設定 ＋ 預設值。
@@ -1300,6 +1301,8 @@ class YaziModal extends Modal {
   buildSearchListRaw() {
     const q = (this.searchQuery || "").trim();
     const hasFacets = this.facets.length > 0;
+    // 每次重算都先清掉：gt / gd / 空關鍵字都不該留著上一次的 id 命中（Enter 會拿它來直接開檔）
+    this.taskHits = [];
 
     if (this.searchKind === "text") {
       // 索引還沒建好時不要給空清單，那會看起來像「搜不到」
@@ -1381,7 +1384,51 @@ class YaziModal extends Modal {
     // 先分「名稱命中 / 只有路徑命中」兩組，組內才比分數 —— SEARCH_LIMIT 的名額
     // 也因此優先給名稱命中的那組
     scored.sort((a, b) => (b.nameHit ? 1 : 0) - (a.nameHit ? 1 : 0) || b.score - a.score);
-    this.listItems = scored.slice(0, SEARCH_LIMIT).map(({ f, via }) => this.searchItem(f, via));
+    const ranked = scored.map(({ f, via }) => this.searchItem(f, via));
+
+    /*
+     * gf 的 task id 捷徑（見 core/taskid.js）：輸入像 id 時，frontmatter id 對得上的
+     * task 釘在最前面。只命中一張時 Enter 直接開它（見 onKey 的 Enter），這裡負責的是
+     * 「命中好幾張」（84 → OB-84 與 SP-84）時它們排第一，而不是被檔名裡碰巧有 84 的筆記擠下去。
+     *
+     * ⚠️ 刻意不受範圍與條件限制：範圍預設是「現在所在的資料夾」，套上去的話
+     *    在別的資料夾按 gf 打 84 就找不到 —— 而單號本來就是全 vault 唯一的。
+     */
+    if (!dirs) this.taskHits = this.taskIdHits(q);
+    if (this.taskHits.length) {
+      const pinned = new Set(this.taskHits.map((f) => f.path));
+      this.listItems = this.taskHits.map((f) => this.searchItem(f))
+        .concat(ranked.filter((it) => !pinned.has(it.path)))
+        .slice(0, SEARCH_LIMIT);
+      return;
+    }
+    this.listItems = ranked.slice(0, SEARCH_LIMIT);
+  }
+
+  /*
+   * frontmatter id 對得上這個查詢的 task 筆記（不像 id 就是空陣列）。
+   * 前綴照字母序、同前綴照路徑 —— 84 命中兩張時順序固定（OB-84 在 SP-84 前）。
+   * 只有輸入像 id 才掃，平常打字不付這個成本；掃也只讀 metadataCache，不讀檔。
+   */
+  taskIdHits(q) {
+    const query = parseTaskIdQuery(q);
+    if (!query) return [];
+    const out = [];
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      const c = this.app.metadataCache.getFileCache(f);
+      if (c && matchesTaskId(c.frontmatter, query)) out.push({ f, id: taskIdOf(c.frontmatter) });
+    }
+    out.sort((a, b) => COLLATOR.compare(a.id.prefix, b.id.prefix) || COLLATOR.compare(a.f.path, b.f.path));
+    return out.map((x) => x.f);
+  }
+
+  /* id 只命中一張時的 Enter：直接開那份筆記，不進結果頁（同 Ctrl+Enter 的「直接開」） */
+  openTaskHit(f) {
+    this.endInput();
+    this.pushLayer();
+    this.listItems = [];
+    this.view = "files";
+    this.openFile(f, "current");
   }
 
   // 靠別名命中的列別名、路徑放小字 —— 跟 Quick Switcher 一樣，看得出「這筆為什麼會出現」
@@ -3548,6 +3595,11 @@ class YaziModal extends Modal {
           this.commitSearch(true);
           return;
         }
+        // gf 打的是 task id 而且只對到一張：直接開，不進結果頁（命中多張就照常進，見 buildSearchListRaw）
+        if (this.searchKind === "file" && this.taskHits && this.taskHits.length === 1) {
+          this.openTaskHit(this.taskHits[0]);
+          return;
+        }
         if (!this.listItems.length) return;
         this.showResults();
         return;
@@ -4237,7 +4289,11 @@ class YaziModal extends Modal {
     } else {
       bits.push(this.sug ? this.t("ui.hintTabTop", "Tab accepts the top one · ↑↓ to choose") : this.t("ui.hintTabAdd", "Tab adds a condition"));
       if (this.facets.length) bits.push(this.t("ui.hintBackspace", "Backspace removes a condition"));
-      bits.push(n ? this.t("ui.hintSubmit", "Enter runs it ({count})", { count: n }) : this.t("ui.noMatch", "(nothing matches)"), this.t("ui.cancel", "Esc to cancel"));
+      // id 只對到一張時 Enter 是直接開檔，不是送出 —— 提示要跟著講實話
+      const hit = !this.editingView && this.searchKind === "file" && this.taskHits && this.taskHits.length === 1
+        ? this.taskHits[0] : null;
+      bits.push(hit ? this.t("ui.hintOpenTask", "Enter opens {name}", { name: hit.basename || hit.name })
+        : n ? this.t("ui.hintSubmit", "Enter runs it ({count})", { count: n }) : this.t("ui.noMatch", "(nothing matches)"), this.t("ui.cancel", "Esc to cancel"));
     }
     this.csHintEl.setText(bits.join("　·　"));
   }

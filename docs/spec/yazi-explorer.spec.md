@@ -296,6 +296,7 @@ Dev: `npm run dev` + `.env.local` `VAULT_PLUGIN_DIR` copies the build into a vau
 | List selection vs file selection | Separate sets, cleared on view change | One set keyed by path | Tabs have no unique path, and "3 bookmarks selected" must not become "3 files selected" after `h` |
 | Keys | Fixed set + `map`/`unmap` aliasing | Full rebinding UI | Interlocking mnemonics; aliasing covers "I want my own key" |
 | `gf` matching | Path + frontmatter `aliases` | Path only | Date-named notes are unfindable by the name you think in |
+| `gf` task id (`84` / `ob84` / `OB-84`) | Resolve via frontmatter `id` on `type: task` notes (`src/core/taskid.js`), vault-wide; one hit → Enter opens it, several → pinned on top | Guess from the file name; respect scope | The id field is the single source of truth; scope defaults to the current folder, which would hide the task you are asking for by number |
 
 ---
 
