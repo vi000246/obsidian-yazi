@@ -1391,10 +1391,11 @@ class YaziModal extends Modal {
      * task 釘在最前面。只命中一張時 Enter 直接開它（見 onKey 的 Enter），這裡負責的是
      * 「命中好幾張」（84 → OB-84 與 SP-84）時它們排第一，而不是被檔名裡碰巧有 84 的筆記擠下去。
      *
-     * ⚠️ 刻意不受範圍與條件限制：範圍預設是「現在所在的資料夾」，套上去的話
-     *    在別的資料夾按 gf 打 84 就找不到 —— 而單號本來就是全 vault 唯一的。
+     * 跟一般 gf 一樣只在 pool 裡找（＝範圍＋條件都套過）。範圍預設是開 yazi 時所在的
+     * 資料夾，所以在別的資料夾打 84 可能找不到 —— 那時就照一般 gf 走；要全 vault 找，
+     * 把範圍放寬到 🌐 全 vault。範圍外的單不該從結果頁「憑空」冒出來。
      */
-    if (!dirs) this.taskHits = this.taskIdHits(q);
+    if (!dirs) this.taskHits = this.taskIdHits(q, pool);
     if (this.taskHits.length) {
       const pinned = new Set(this.taskHits.map((f) => f.path));
       this.listItems = this.taskHits.map((f) => this.searchItem(f))
@@ -1409,12 +1410,14 @@ class YaziModal extends Modal {
    * frontmatter id 對得上這個查詢的 task 筆記（不像 id 就是空陣列）。
    * 前綴照字母序、同前綴照路徑 —— 84 命中兩張時順序固定（OB-84 在 SP-84 前）。
    * 只有輸入像 id 才掃，平常打字不付這個成本；掃也只讀 metadataCache，不讀檔。
+   * pool ＝要在哪些檔裡找（buildSearchListRaw 傳入範圍＋條件篩過的那份）。
    */
-  taskIdHits(q) {
+  taskIdHits(q, pool) {
     const query = parseTaskIdQuery(q);
     if (!query) return [];
     const out = [];
-    for (const f of this.app.vault.getMarkdownFiles()) {
+    for (const f of pool || this.app.vault.getMarkdownFiles()) {
+      if ((f.extension || "").toLowerCase() !== "md") continue;
       const c = this.app.metadataCache.getFileCache(f);
       if (c && matchesTaskId(c.frontmatter, query)) out.push({ f, id: taskIdOf(c.frontmatter) });
     }

@@ -58,12 +58,12 @@ const FM = {
 };
 const FILES = Object.keys(FM).map(file);
 
-const mk = (q, kind) => {
+const mk = (q, kind, scope) => {
   const opened = [];
   const m = Object.assign(Object.create(YaziModal.prototype), {
     view: "search", searchKind: kind || "file", searchQuery: q, facets: [],
-    // 範圍設在 notes/：id 查找刻意不受範圍限制
-    scopePath: "notes",
+    // 範圍：預設全 vault；id 查找跟一般 gf 一樣只在範圍內找
+    scopePath: scope || "",
     listItems: [], listIndex: 0, listFilter: "", layers: [], mode: "search",
     t: (k, d, v) => (d || k).replace(/\{(\w+)\}/g, (_, x) => (v && v[x] != null ? v[x] : "")),
     plugin: { data: { sortSearch: { field: "natural", reverse: false, foldersFirst: true } } },
@@ -86,17 +86,23 @@ const mk = (q, kind) => {
 const paths = (m) => m.listItems.map((it) => it.path);
 
 const two = mk("84");
-eq("純數字 84：OB-84、SP-84 釘在最前（前綴字母序），其他命中照舊排在後面",
-  paths(two), ["work/OB-84 連 DB 的 API 整合測試 PoC.md", "side/SP-84 跑步課表.md", "notes/第 84 次會議.md"]);
+eq("純數字 84：OB-84、SP-84 釘在最前（前綴字母序），其他模糊命中（含 OB-184）照舊排在後面",
+  paths(two), ["work/OB-84 連 DB 的 API 整合測試 PoC.md", "side/SP-84 跑步課表.md", "notes/第 84 次會議.md", "work/OB-184 別的單.md"]);
 eq("純數字 84：184 不算 id 命中", two.taskHits.map((f) => f.path).includes("work/OB-184 別的單.md"), false);
 
 const one = mk("sp-209");
-eq("sp-209：只命中一張（範圍外也找得到）", one.taskHits.map((f) => f.path), ["side/SP-209 某件事.md"]);
+eq("sp-209：只命中一張", one.taskHits.map((f) => f.path), ["side/SP-209 某件事.md"]);
 eq("sp-209：結果清單第一筆就是它", paths(one)[0], "side/SP-209 某件事.md");
 
 eq("ob209：檔名像單號但 frontmatter 不是 task → 不算命中", mk("ob209").taskHits, []);
 eq("不像 id 的輸入：沒有 id 命中", mk("會議").taskHits, []);
-eq("不像 id 的輸入：結果跟原本一樣（只照範圍＋模糊比對）", paths(mk("會議")), ["notes/第 84 次會議.md"]);
+eq("不像 id 的輸入：結果跟原本一樣（只照範圍＋模糊比對）", paths(mk("會議", "file", "notes")), ["notes/第 84 次會議.md"]);
+
+/* 範圍：id 查找跟一般 gf 一樣只看範圍內 */
+eq("範圍 side/ 打 84：只剩 SP-84 一張", mk("84", "file", "side").taskHits.map((f) => f.path), ["side/SP-84 跑步課表.md"]);
+eq("範圍 notes/ 打 84：範圍內沒有 task → 沒有 id 命中", mk("84", "file", "notes").taskHits, []);
+eq("範圍 notes/ 打 84：結果就是原本的 gf", paths(mk("84", "file", "notes")), ["notes/第 84 次會議.md"]);
+eq("範圍 work/ 打 sp-209：範圍外的單找不到", mk("sp-209", "file", "work").taskHits, []);
 eq("沒對到任何 task 的 id 形狀（999）：照原本的 gf", paths(mk("999")), []);
 eq("gd 不做 id 查找", mk("84", "dir").taskHits, []);
 
@@ -112,6 +118,9 @@ eq("只命中一張：Enter 直接開那份筆記（current），不進結果頁
 eq("只命中一張：開完回到檔案檢視、輸入列收起", [ob84.view, ob84.mode], ["files", "nav"]);
 eq("ob84（小寫無連字號）一樣直接開", enter(mk("ob84")), [["work/OB-84 連 DB 的 API 整合測試 PoC.md", "current"]]);
 eq("命中兩張：Enter 照常進結果頁", enter(mk("84")), [["<results>"]]);
+eq("範圍 side/ 打 84：範圍內只剩一張 → Enter 直接開", enter(mk("84", "file", "side")), [["side/SP-84 跑步課表.md", "current"]]);
+eq("範圍 notes/ 打 84：範圍內沒有 task → Enter 照常進結果頁", enter(mk("84", "file", "notes")), [["<results>"]]);
+eq("範圍 work/ 打 sp-209：沒命中也沒結果 → Enter 什麼都不做", enter(mk("sp-209", "file", "work")), []);
 eq("不像 id：Enter 照常進結果頁", enter(mk("會議")), [["<results>"]]);
 const ed = mk("OB-84");
 ed.editingView = { name: "v" };

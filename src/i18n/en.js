@@ -158,7 +158,7 @@ module.exports = {
   "help.ext.custom": "your own entries: an editor, a terminal, any command line. Settings → Openers",
   "help.sec.search": "Search",
   "help.search.gt": "full-text search across the vault (hits shown with context in the preview pane)",
-  "help.search.gf": "fuzzy search files across the vault: matches the whole path, name and alias hits rank first. A task id (84, ob84, OB-84) is looked up by frontmatter id: one hit → Enter opens it directly; several (OB-84 and SP-84) → they rank first",
+  "help.search.gf": "fuzzy search files across the vault: matches the whole path, name and alias hits rank first. A task id (84, ob84, OB-84) is looked up by frontmatter id within the current scope: one hit → Enter opens it directly; several (OB-84 and SP-84) → they rank first",
   "help.search.gd": "fuzzy search folders across the vault: matches the whole path, folder-name hits rank first",
   "help.search.move": "move through the candidates",
   "help.search.and": "space-separated words must all match (AND) — same in gt / gf / gd",

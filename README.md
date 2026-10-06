@@ -102,9 +102,10 @@ how you narrow a folder search: `projects notes` keeps only what matches both.
 **Task ids in `gf`.** Notes with `type: task` and an `id` like `OB-84` in their frontmatter can be
 reached by id. Type `84` (any prefix), `ob84` or `OB-84` (case and hyphen optional) and press `Enter`:
 if exactly one task has that id, it opens directly; if several do (`OB-84` and `SP-84`), the result list
-opens with those tasks on top. The id comes from the frontmatter, not the file name, and the lookup
-ignores the scope and conditions — ids are unique across the vault. Anything that does not look like
-an id, or matches no task, is an ordinary `gf` search.
+opens with those tasks on top. The id comes from the frontmatter, not the file name. Like every `gf`
+search, the lookup stays inside the current scope (by default the folder you opened the explorer in)
+and any conditions — widen the scope to 🌐 whole vault to find a task that lives elsewhere. Anything
+that does not look like an id, or matches no task in scope, is an ordinary `gf` search.
 
 Results are ranked by relevance, and **search keeps its own sort setting**, separate from the one the
 file browser uses. It defaults to `natural`, which means "leave the ranking alone" — otherwise a
