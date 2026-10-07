@@ -64,7 +64,11 @@ const mk = (over) => {
       vault: { getAbstractFileByPath: (p) => (String(p).endsWith(".md") ? F(p) : null) },
       workspace: {
         activeLeaf: null,
+        rootSplit: {},
         iterateRootLeaves(fn) { for (const l of leaves) fn(l); },
+        // Obsidian 的「目前分頁」：測試裡就是 activeLeaf，沒有就拿第一個
+        getMostRecentLeaf() { return this.activeLeaf || leaves[0] || null; },
+        setActiveLeaf(leaf) { this.activeLeaf = leaf; },
       },
     },
   }, over);
@@ -204,6 +208,64 @@ eq("換一份清單就把選取清掉", [leak.view, [...leak.listSel]], ["frecen
   t2.handleKey(ev("y"));
   await settle();
   eq("確認之後兩個一起關掉", leaves.map((l) => l.getDisplayText()), ["T3"]);
+
+  /*
+   * ── 7b. co（close others）：只留游標／選取的那幾個，其餘全關（vim 的 :only）──
+   * 對象跟 x 同一組（listTargets），只是反過來。關兩個以上一樣要問。
+   */
+  resetLeaves();
+  const only = mk({ view: "tabs" });
+  only.buildList();
+  only.app.workspace.activeLeaf = leaves[0];   // Obsidian 目前停在 T1
+  only.listIndex = 1;                          // yazi 的游標停在 T2
+  only.handleKey(ev("c"));
+  only.handleKey(ev("o"));
+  eq("沒選取時 co 要關兩個 → 先問，還沒動手", [only.mode, leaves.length], ["confirm", 3]);
+  only.handleKey(ev("n"));
+  await settle();
+  eq("按 n 取消：三個都在", [only.mode, leaves.length], ["nav", 3]);
+  only.handleKey(ev("c"));
+  only.handleKey(ev("o"));
+  only.handleKey(ev("y"));
+  await settle();
+  eq("y 之後只剩游標那一列（T2）", leaves.map((l) => l.getDisplayText()), ["T2"]);
+  eq("游標跟著 T2 走（上面的 T1 關掉後索引要重算）", [only.listIndex, only.listItems.length], [0, 1]);
+  eq("Obsidian 目前分頁（T1）被關掉 → 改指到留下來的 T2", only.app.workspace.activeLeaf.getDisplayText(), "T2");
+
+  resetLeaves();
+  const onlySel = mk({ view: "tabs" });
+  onlySel.buildList();
+  onlySel.handleKey(ev(" "));   // 選 T1
+  onlySel.handleKey(ev("j"));   // 跳過 T2
+  onlySel.handleKey(ev(" "));   // 選 T3
+  eq("Space 圈好要留的兩個", onlySel.listSel.size, 2);
+  onlySel.handleKey(ev("c"));
+  onlySel.handleKey(ev("o"));
+  await settle();
+  eq("只關一個就不問，直接關掉沒選的 T2", [onlySel.mode, leaves.map((l) => l.getDisplayText())], ["nav", ["T1", "T3"]]);
+  eq("關完把選取清掉", [...onlySel.listSel], []);
+
+  /* 只剩自己時 co 什麼都不關 */
+  const onlyOne = mk({ view: "tabs" });
+  onlyOne.buildList();
+  onlyOne.handleKey(ev("a", { ctrlKey: true }));
+  onlyOne.handleKey(ev("c"));
+  onlyOne.handleKey(ev("o"));
+  await settle();
+  eq("全選之後 co ＝沒有別的可關，兩個都還在", leaves.length, 2);
+
+  /* 檔案檢視：留的是 Obsidian 目前的分頁（跟 ,x 關的是同一個） */
+  resetLeaves();
+  const fv = mk({
+    view: "files", cursorPath: "1.md", filter: "",
+    cwd: { path: "/", children: ["1.md"].map(F) }, memo: new Map(),
+  });
+  fv.app.workspace.activeLeaf = leaves[2];     // T3 是目前分頁
+  fv.handleKey(ev("c"));
+  fv.handleKey(ev("o"));
+  fv.handleKey(ev("y"));
+  await settle();
+  eq("檔案檢視的 co 留下 Obsidian 目前的分頁 T3", leaves.map((l) => l.getDisplayText()), ["T3"]);
 
   /* ── 8. 常去的地方：單筆不問、多筆問 ── */
   const fr = mk({ view: "frecency" });

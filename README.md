@@ -254,12 +254,17 @@ Copy paths with `cc` (absolute), `cd` (its folder), `cf` (file name), `cn` (name
 `m` bookmarks the item under the cursor, `M` the current folder. Both ask what to call it, with the
 file name filled in — bookmarks are for recognising, and a file called `2026-09-18.md` is not how you
 think of it. In the bookmark list, `R` renames one, `m` plus a letter assigns a shortcut, and then
-`'` plus that letter jumps there from anywhere.
+`'` plus that letter jumps there from anywhere. The letter only ever works after `'` — the list's own
+keys (`d`, `t`, `s`, `x`, `v`…) would otherwise swallow most of the alphabet.
 
 The same selection keys work inside these lists: `Space` picks a row and moves down, `v` / `V` pick a
 range, `^a` / `^r` select all or invert, and `x` then removes every selected row — closing tabs,
 deleting bookmarks or views, forgetting most-visited entries. Removing more than one always asks
 first, including tabs, because `X` only brings back the last one you closed.
+
+`co` (close others) is the inverse of `x` for tabs — vim's `:only`. In the tab list it closes every
+tab **except** the cursor row, or except the selection if you have one: `Space` the tabs you want to
+keep, then `co`. Anywhere else it keeps Obsidian's current tab, the same one `,x` would close.
 
 `T` lists open tabs, `b` bookmarks, `rf` recent files (newest first), and `z` shows **most visited** —
 folders you enter and files you open, ranked together by how often × how recently. The two are easy
@@ -422,7 +427,7 @@ doing nothing.
 | **Bookmarks** | `m` `M` `'` |
 | **Select** | `<Space>` `v` `V` `Esc` |
 | **Clipboard** | `y` `x` `p` `P` `Y` `X` |
-| **Files** | `a` `A` `R` `D` `c`(`cc` `cd` `cf` `cn` `cr`) |
+| **Files** | `a` `A` `R` `D` `c`(`cc` `cd` `cf` `cn` `cr` `co`) |
 | **Sort** | `S`(then a sort key) |
 | **Views** | `gv` `s`(in search results) |
 | **Preview** | `J` `K` `PageDown` `PageUp` `,`(`,x` `,X` `,p`) |

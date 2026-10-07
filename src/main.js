@@ -561,6 +561,7 @@ const HELP = [
   ["help.sec.tabs"],
   [",x", "help.tab.close"],
   [",X", "help.tab.undo"],
+  ["co", "help.tab.only"],
   ["help.sec.select"],
   ["<Space>", "help.sel.space"],
   ["v / V", "help.sel.v"],
@@ -610,7 +611,10 @@ const PENDING_MENUS = {
   },
   c: {
     descKey: "menu.c.desc",
-    items: [["c", "menu.c.c"], ["d", "menu.c.d"], ["f", "menu.c.f"], ["n", "menu.c.n"], ["r", "menu.c.r"]],
+    // co（close others）跟複製路徑擠同一個前綴：c 在清單裡本來沒用，而 co 是
+    // qutebrowser 的既有鍵（tab-only），比塞進 , 前綴好記 —— , 常是人家 Obsidian 層的 leader
+    items: [["c", "menu.c.c"], ["d", "menu.c.d"], ["f", "menu.c.f"], ["n", "menu.c.n"], ["r", "menu.c.r"],
+            ["o", "menu.c.o"]],
   },
   ",": {
     descKey: "menu.comma.desc",
@@ -2883,6 +2887,61 @@ class YaziModal extends Modal {
     }
   }
 
+  /*
+   * co（close others）＝只留下這幾個，其餘分頁全關（vim 的 :only、qutebrowser 的 co）。
+   *
+   * 「留哪幾個」看你在哪裡：
+   *   分頁清單 → 游標那一列；有選取就是選取的那幾列。跟 x 是同一組對象（listTargets），
+   *             只是反過來：x 關「這些」，co 關「這些以外的」。所以 Space / v 圈好要留的，
+   *             一組鍵就把其他的清掉。
+   *   其他地方 → Obsidian 目前的分頁（跟 ,x 關的是同一個）。
+   *
+   * 關兩個以上先問一聲，理由同 LIST_REMOVE.tabs 的 askMany：X 只還原得回最後一個。
+   * 被關掉的若包含 Obsidian 目前的分頁，就把游標那一列升成目前分頁 —— 不然 Obsidian
+   * 會自己挑一個鄰居，q 離開之後落在哪裡要看運氣。
+   */
+  closeOtherTabs() {
+    const ws = this.app.workspace;
+    const inList = this.view === "tabs";
+    const cursor = inList ? this.listCurrent() : null;
+    const keep = new Set(
+      inList
+        ? this.listTargets().map((it) => it.leaf).filter(Boolean)
+        : [ws.getMostRecentLeaf(ws.rootSplit)].filter(Boolean)
+    );
+    if (!keep.size) {
+      new Notice(this.t("notice.noTabToClose", "No tab to close"));
+      return;
+    }
+    const others = [];
+    ws.iterateRootLeaves((leaf) => { if (!keep.has(leaf)) others.push(leaf); });
+    if (!others.length) {
+      new Notice(this.t("notice.noOtherTabs", "No other tabs to close"));
+      if (inList) this.render();
+      return;
+    }
+
+    const run = () => {
+      const activeGone = others.includes(ws.activeLeaf);
+      for (const leaf of others) leaf.detach();
+      if (inList) {
+        if (activeGone && cursor && keep.has(cursor.leaf)) ws.setActiveLeaf(cursor.leaf, { focus: false });
+        this.resetListSelection();
+        this.buildList();
+        // 游標跟著它原本那一列走：上面的列關掉之後，舊索引已經指到別的分頁
+        const at = cursor ? this.listItems.findIndex((it) => it.leaf === cursor.leaf) : -1;
+        if (at >= 0) this.listIndex = at;
+        this.render();
+      }
+      new Notice(this.t("notice.tabsClosed", "Closed {count} tabs", { count: others.length }));
+    };
+    if (others.length === 1) { run(); return; }
+    this.askConfirm(
+      this.t("confirm.closeOtherTabs", "Close the other {count} tabs?", { count: others.length }),
+      run
+    );
+  }
+
   /* ── 檔案操作 ── */
 
   childPath(name) {
@@ -3824,9 +3883,9 @@ class YaziModal extends Modal {
          * 只在 x 有意義的那幾種清單收 —— 其他清單選起來也沒有能對它們做的事，
          * 給了只會讓人以為接下來有東西可按。
          *
-         * ⚠️ v / V 因此會蓋掉「按該筆的快捷字母直接開」（下面的 default）對字母
+         * ⚠️ v / V 因此會蓋掉檢視清單「按該筆的快捷字母直接跑」（下面的 default）對字母
          * v / V 的支援 —— 這條規則本來就是這樣：switch 接過的字母一律優先
-         * （d / u / x / t / R… 早就是了），要從任何地方跳書籤請用 ' + 字母。
+         * （d / u / x / t / R… 早就是了）。書籤清單已經不再接直接字母，跳書籤一律 ' + 字母。
          */
         case " ":
           if (this.listSelectable()) {
@@ -3868,6 +3927,9 @@ class YaziModal extends Modal {
          * 按了完全沒反應，而那正是最需要它的地方（全文搜尋結果又長又是純文字）。
          */
         case ",": this.pending = ","; this.render(); break;
+        // c 前綴在清單裡也要接：co（關其他分頁）在分頁清單才是主場，cc / cd 等順便
+        // 也能複製游標那一列的路徑（copyPath 本來就會看 listCurrent）
+        case "c": this.pending = "c"; this.render(); break;
         case "r": this.pending = "r"; this.render(); break;
         case "?": this.showHelp = !this.showHelp; this.render(); break;
         // h ＝退回上一個地方（最底層就不動）；q ＝一律關掉視窗（yazi 的 quit）；
@@ -3876,10 +3938,13 @@ class YaziModal extends Modal {
         case "q": this.forceClose(); break;
         case "Escape": this.escapeBack(); break;
         default:
-          // 書籤／檢視清單裡直接按該筆的字母也能開
-          if (this.view === "bookmarks" && key.length === 1 && this.plugin) {
-            if (this.plugin.bookmarkByKey(key)) this.jumpToBookmark(key);
-          } else if (this.view === "views" && key.length === 1 && this.plugin) {
+          /*
+           * 檢視清單裡直接按該筆的字母就跑。
+           * 書籤清單**不**這樣做了：清單自己的指令鍵（d / t / s / x / v…）幾乎把常用
+           * 字母佔光，「指定了 t 卻按不到」比「少一條捷徑」更讓人困惑。書籤字母只走
+           * ' 前綴（'t），那條路在任何地方都通、也永遠不會跟指令鍵打架。
+           */
+          if (this.view === "views" && key.length === 1 && this.plugin) {
             if (this.plugin.viewByKey(key)) this.runViewByKey(key);
           }
           break;
@@ -3988,6 +4053,7 @@ class YaziModal extends Modal {
     }
     if (prefix === "c") {
       if (key === "c" || key === "d" || key === "f" || key === "n" || key === "r") this.copyPath(key);
+      else if (key === "o") this.closeOtherTabs();
       else this.render();
       return;
     }
@@ -4441,13 +4507,14 @@ class YaziModal extends Modal {
         : this.view === "tabs"
         ? [["Enter / l / o", this.t("legend.switchTab", "switch to it")],
          ["x", this.t("legend.closeTab", "close this tab")],
+         ["co", this.t("legend.closeOtherTabs", "close every other tab (keeps the selection)")],
          ["X", this.t("legend.reopenTab", "reopen the last closed one")]]
         : this.view === "bookmarks"
         ? [
             ["Enter / l / o", this.t("legend.jump", "jump there")],
             ["R", this.t("legend.renameBookmark", "rename this bookmark")],
             ["m + " + this.t("ui.letter", "letter"), this.t("legend.assignLetter", "assign a letter (m + Backspace clears it)")],
-            [this.t("ui.letter", "letter"), this.t("legend.letterJump", "jump straight to that bookmark")],
+            ["' + " + this.t("ui.letter", "letter"), this.t("legend.letterJump", "jump to that bookmark from anywhere")],
             ["x", this.t("legend.deleteBookmark", "delete the bookmark")],
           ]
         : this.view === "frecency"
