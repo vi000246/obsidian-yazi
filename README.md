@@ -257,6 +257,9 @@ think of it. In the bookmark list, `R` renames one, `m` plus a letter assigns a 
 `'` plus that letter jumps there from anywhere. The letter only ever works after `'` — the list's own
 keys (`d`, `t`, `s`, `x`, `v`…) would otherwise swallow most of the alphabet.
 
+Bookmarks are kept in the plugin's settings file by default. If you use the vault on more than one
+device, they can live in a note instead — see [Bookmarks — where they are kept](#bookmarks--where-they-are-kept).
+
 The same selection keys work inside these lists: `Space` picks a row and moves down, `v` / `V` pick a
 range, `^a` / `^r` select all or invert, and `x` then removes every selected row — closing tabs,
 deleting bookmarks or views, forgetting most-visited entries. Removing more than one always asks
@@ -440,6 +443,71 @@ letters (`'` and `m` take the letter literally, so every letter stays usable as 
 `Ctrl` combinations.
 </details>
 
+### Bookmarks — where they are kept
+
+**Bookmarks note** (in the *Bookmarks* section) decides where bookmarks live.
+
+- **Empty (the default):** in the plugin's `data.json`, exactly as before. Nothing is created in your
+  vault.
+- **A note's path**, e.g. `Bookmarks.md` (the box suggests existing notes; `.md` is added if you leave
+  it out): bookmarks live in that note, one per line. When you set it, the bookmarks you have now are
+  **merged into the note** — lines already in the note are kept as they are, nothing is duplicated, and
+  the note is created if it does not exist. Clearing the box moves them back into `data.json` and
+  leaves the note alone.
+
+Use a note when the vault is synced between devices (git, Syncthing, iCloud…). `data.json` is written
+whole, so a device holding an old list in memory overwrites whatever the other device just added, and
+a sync sees that as an ordinary edit. With a note:
+
+- every change re-reads the note and rewrites **only the line it touches**, so two devices editing
+  different bookmarks merge line by line, and a stale device cannot write its old list back;
+- files are written as wikilinks, so renaming or moving a file in Obsidian updates the link and the
+  bookmark follows it. Folders are written as a path in backticks, and the plugin rewrites those itself
+  when a folder is renamed or moved — as it does for the note itself if you move it;
+- the note can be edited by hand or changed by a sync while Obsidian is running; the plugin picks the
+  change up immediately.
+
+The format is one bookmark per line — an optional shortcut letter, the target, an optional name:
+
+```markdown
+- d · [[Journal/Index]] · Journal
+- p · `Work/projects` · Projects
+- [[Reading list]]
+```
+
+When editing by hand, `·`, `:`, `|` or plain spaces all work as separators, and a wikilink alias
+(`[[Reading list|To read]]`) works as the name. Anything that is not a bookmark line — headings, prose,
+blank lines, a merge-conflict marker — is left exactly as it is, and so is everything in the
+frontmatter or inside a fenced code block, so the note can carry its own notes and examples. If the
+same file is listed twice, the first line wins.
+
+**Mixing versions.** A device still running an older version keeps writing bookmarks into `data.json`.
+Once you use a note, those are ignored — they can no longer overwrite anything. If any of them are not
+in the note, the settings tab lists them and offers to import them.
+
+### Files the plugin keeps
+
+All in the plugin's folder (normally `.obsidian/plugins/yazi-explorer/`):
+
+| File | What | Sync it between devices? |
+|---|---|---|
+| `data.json` | settings, saved views, and bookmarks unless you use a bookmarks note | yes |
+| `local.json` | most-visited counts and sort order — this device only | **no** |
+| `text-index.json` | full-text search cache, rebuilt when missing | no |
+
+**If you sync the vault with git, add the per-device files to `.gitignore`:**
+
+```gitignore
+.obsidian/plugins/yazi-explorer/local.json
+.obsidian/plugins/yazi-explorer/text-index.json
+```
+
+Most-visited counts used to live in `data.json`, which then changed every time you opened a file and
+made two devices conflict constantly. On upgrade they are copied into `local.json` once, so the list
+does not start from zero; the old fields are left in `data.json` for devices that have not upgraded yet.
+When `data.json` changes on disk — a pull, another sync tool — the plugin reloads settings and saved
+views instead of writing its old copy back over them (this needs Obsidian 1.5.7 or later).
+
 ### Preview and index
 
 Render on/off, render delay, scroll step, wheel behaviour, cursor wrap-around, half-page size, and the
@@ -457,6 +525,9 @@ folders, how large the cache currently is, and a button to clear it.
   evaluates anything.
 - **The full-text index** lives in this plugin's folder under `.obsidian`. It is built the first time
   you use `gt`, and the settings tab shows its size with a button to clear it.
+- **Obsidian 1.5.7 or later**, for reloading settings when `data.json` changes on disk.
+- **Your vault is only written to** when you ask for it: file operations, and the bookmarks note if you
+  set one. See [Files the plugin keeps](#files-the-plugin-keeps) for what goes in the plugin's folder.
 
 ## Development
 

@@ -9,7 +9,7 @@
 - **Owner**: Logan Lin (`manifest.json`)
 - **Status**: ACTIVE — living document
 - **Created**: 2026-09-18 12:18
-- **Last Updated**: 2026-09-18 14:45
+- **Last Updated**: 2026-10-15 10:30
 
 ## Change History
 
@@ -18,6 +18,7 @@
 | 2026-09-18 12:18 | code-sync | N/A | Created from brownfield analysis — keyboard-driven miller-column file explorer for Obsidian (`main.js` modal + pure core modules), at v0.1.0 with outline / relations / saved views / layer-stack navigation just landed |
 | 2026-09-18 13:40 | code-sync | N/A | Esc/h/q refactor: OVERLAYS table replaces the if-ladder; results Esc leaves the search; landing-folder `h` returns to the list; `src/main.js` anchors re-pointed after the insertions |
 | 2026-09-18 14:45 | code-sync | N/A | Multi-select reaches the list views: `listSel` + the `LIST_REMOVE` table give bookmarks / views / tabs / most-visited the file view's `Space` `v` `V` `^a` `^r`, and `x` removes the whole selection behind one confirm. Fixed alongside: visual range never un-selected on pull-back (both views). Anchors re-pointed |
+| 2026-10-15 10:30 | code-sync | N/A | Storage split for multi-device vaults: optional bookmarks note (`settings.bookmarksNote`, line-level edits via `src/core/bookmarknote.js`), frecency + sort moved to per-device `local.json`, `onExternalSettingsChange` reloads `data.json`; `minAppVersion` 1.5.7 |
 
 ## Summary
 
@@ -153,10 +154,10 @@ gr — relations walked like folders (src/main.js:2485)
 ### Entities
 | Entity | Owner | Lifecycle |
 |---|---|---|
-| Settings (`data.json`, same object as user data) | Plugin | Merged with defaults on load (`src/main.js:61`); arrays in saved data replace defaults wholesale; written on every settings change, bookmark, view, sort or frecency save |
-| Bookmark `{path, name, key, added}` | Plugin `data.bookmarks` | Created by `m`/`M` after a name prompt (`src/main.js:2553`); legacy object form migrated to array (`migrateBookmarks`) |
-| Saved view `{id, name, key, kind, query, facets[], scopePath}` | Plugin `data.views` | Created by `s` in search results; same name replaces (`saveView`) |
-| Frecency record (path → visits, scored by `frecencyScore` `src/main.js:5833`) | Plugin `data.frecency` | Bumped on `file-open` and `gotoFolder`; pruned to `FRECENCY_KEEP` |
+| Settings (`data.json`, `plugin.settings`) | Plugin | Merged with defaults on load (`applySettings`); arrays in saved data replace defaults wholesale; written on settings / view changes and, in the default mode, bookmark changes; reloaded in place by `onExternalSettingsChange` when the file changes on disk |
+| Bookmark `{path, name, key, added}` | `settings.bookmarks` (default) **or** the bookmarks note (`settings.bookmarksNote`) | Created by `m`/`M` after a name prompt (`addBookmark`); legacy object form migrated to array (`migrateBookmarks`). In note mode each change re-reads the note and rewrites only the touched line (`editNote` → `src/core/bookmarknote.js`); `settings.bookmarks` then only collects what older versions write (`strayBookmarks`) |
+| Saved view `{id, name, key, kind, query, facets[], scopePath}` | `settings.views` | Created by `s` in search results; same name replaces (`saveView`) |
+| Frecency record (path → visits, scored by `frecencyScore`) and sort | `plugin.data` → `local.json` (per device, not synced) | Bumped on `file-open` and `gotoFolder`; pruned to `FRECENCY_KEEP`; copied once from legacy `data.json` fields on upgrade (`loadLocal`) |
 | Full-text index `Map<path, text>` + `text-index.json` | Plugin | Built on first `gt`, persisted to the plugin folder, refreshed by vault events; size shown/clearable in settings |
 | Layer snapshot | Modal (in-memory) | Pushed on entering a place, popped by h/Esc, capped at `LAYER_MAX` (`src/main.js:132`); dies with the modal |
 
@@ -173,10 +174,17 @@ views:       [ { id, name, key, kind, query, facets: [{id, value}], scopePath } 
 preview:  { renderMarkdown, renderDelay, seekLines, maxChars, maxLines, wheelScrollsPreview }
 behavior: { wrapCursor, halfPage, recentLimit, frecencyLimit, searchLimit }
 index:    { ... }                # full-text index caps
-# runtime-only additions on the same object:
+bookmarksNote: ""                # "" = bookmarks below; a note path = bookmarks live in that note
 bookmarks: [ { path, name, key, added } ]
-frecency:  { <path>: <record> }
-sort:      { field, reverse, foldersFirst }
+# legacy fields kept as-is for devices that have not upgraded: frecency, sort, sortSearch
+```
+
+`local.json` (plugin folder, per device): `{ version: 1, frecency: { <path>: {n, t} }, sort, sortSearch }`.
+
+Bookmarks note, one line per bookmark (`src/core/bookmarknote.js`):
+```
+- d · [[Journal/Index]] · Journal      # file: wikilink (follows renames via Obsidian's link updater)
+- p · `Work/projects` · Projects       # folder: backtick path (rewritten by the plugin on rename)
 ```
 
 ### Migration Strategy
@@ -208,7 +216,7 @@ A list opened by command is the bottom layer: `Esc`/`q` close, `h` stays (`src/m
 No coded errors. Failures surface as `Notice` text (translated) and `console.error("[yazi-explorer] …")`; preview render failure keeps plain text and prints a banner (`src/main.js:4716` failure path).
 
 ### Versioning Strategy
-`manifest.json` `version` ↔ git tag without `v`; `versions.json` maps plugin version → `minAppVersion` (1.4.0). Release assets `main.js`, `manifest.json`, `styles.css` built by `.github/workflows/release.yml` on tag push (runs `npm ci`, `npm test`, `npm run build`).
+`manifest.json` `version` ↔ git tag without `v`; `versions.json` maps plugin version → `minAppVersion` (1.4.0 up to 0.3.1; 1.5.7 from the next release, written by `npm version`). Release assets `main.js`, `manifest.json`, `styles.css` built by `.github/workflows/release.yml` on tag push (runs `npm ci`, `npm test`, `npm run build`).
 
 ---
 
@@ -218,7 +226,7 @@ No coded errors. Failures surface as `Notice` text (translated) and `console.err
 |---|---|---|---|
 | Performance | Cursor moves stay instant while holding `j`; preview never blocks navigation | Manual; `searchCost` timing in modal | Preview debounced by `PREVIEW_RENDER_DELAY` with token cancellation; preview text capped at `PREVIEW_MAX_CHARS`/`PREVIEW_MAX_LINES` (`src/main.js:122`); search re-run throttled when the last run exceeded its budget; relation groups cached per file (`src/main.js:2202`) |
 | Security | Browsing executes nothing from the vault; no shell injection via file names | `tests/preview-sanitize-test.js`, `tests/openers-test.js` | `stripPluginNoise` + `stripForRender` before `MarkdownRenderer` (`src/main.js:5145`, `4941`); openers spawn with argv arrays (`src/main.js:2919`); no network, no `eval`, no `innerHTML` |
-| Compatibility | Desktop + mobile, Obsidian ≥ 1.4.0 | Manifest `isDesktopOnly: false` | `Platform.isDesktopApp` guards around `electron`/`child_process`; legacy `renderMarkdown` fallback |
+| Compatibility | Desktop + mobile, Obsidian ≥ 1.5.7 (`onExternalSettingsChange`) | Manifest `isDesktopOnly: false` | `Platform.isDesktopApp` guards around `electron`/`child_process`; legacy `renderMarkdown` fallback |
 | Robustness | A broken panel or missing helper must not blank the preview | `tests/fmpanel-test.js`, `tests/undefined-calls-test.js` | try/catch around the frontmatter panel; static scan for undefined function calls in `src/` |
 | Localisation | Every user-visible string has an English fallback at the call site; zh-TW may be partial | `tests/i18n-test.js` (keys used in `main.js` and `settings/tab.js` exist in `en.js`; placeholder parity) | `createTranslator` falls back per key (`src/i18n/index.js:36`) |
 
@@ -232,7 +240,7 @@ No coded errors. Failures surface as `Notice` text (translated) and `console.err
 | Rendering | DOM API (`createDiv/createSpan`), no `innerHTML` | Templates / innerHTML | Descriptions contain `<Space>`; search needles are user input (`hilite`, `src/main.js:4445` region) |
 | Preview | `MarkdownRenderer` on sanitised text | Raw text only / iframe | Tables and headings are why the preview exists; sanitising keeps `dataviewjs`/`meta-bind` from running |
 | Module split | One CJS `main.js` + pure `core/*` modules, esbuild bundle | Full TS/ESM refactor | Core logic testable in Node without Obsidian; `tests/_probe.js:32` appends a `__test` export to the built file so internals need no production exports |
-| Persistence | Single `data.json` via `loadData/saveData` | Separate files per concern | One writer avoids settings and bookmarks overwriting each other (`src/main.js:5491` comment) |
+| Persistence | `data.json` for synced settings; `local.json` for per-device frecency/sort; optional bookmarks note | Single `data.json` (≤ 0.3) | A whole-file `data.json` written from memory let one device's stale state overwrite the other's bookmarks, and frecency rewrote it on every file open; per-line note edits merge in git, per-device state never syncs |
 | Key customisation | `map`/`unmap` aliasing only (`src/core/keymap.js:68`) | Full per-action rebinding | Keys form an interlocking set (`d/u` half-page ⇒ `D` delete); aliasing keeps the input layer intact |
 
 ---
@@ -243,7 +251,7 @@ No coded errors. Failures surface as `Notice` text (translated) and `console.err
 |---|---|---|---|
 | Obsidian commands | Command palette / hotkeys / leader-key plugins | Ids listed above; each opens the modal with `initialView` | Ids are stable since 0.1.0 |
 | `metadataCache` | Read | `getFileCache` (frontmatter, headings, tags), `resolvedLinks`, `getFirstLinkpathDest` | Obsidian public API |
-| `app.fileManager` / `vault` | Write (file ops only) | `renameFile`, `create`, `createFolder`, trash; never edits note content | — |
+| `app.fileManager` / `vault` | Write (file ops; the bookmarks note when set) | `renameFile`, `create`, `createFolder`, trash; `vault.process` on the bookmarks note only — no other note content is edited | — |
 | vim-ime-switch (user's other plugin) | DOM | Its `inputSelector` targets `.yazi-input` to restore the IME in the search box | Class name must stay |
 | Task system in the user's vault | Read | `parent` / `related` / `blocks` wikilinks in task frontmatter feed the relation groups | Reverse groups are derived, so the vault stores one direction only |
 
@@ -272,7 +280,7 @@ Dev: `npm run dev` + `.env.local` `VAULT_PLUGIN_DIR` copies the build into a vau
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | `AUTO_TAG_PREFIXES = ["work/"]` is vault-specific in shipped code (`src/main.js:184`) | H | L | Move to settings before community review |
-| Editing `data.json` externally while Obsidian runs is overwritten by the in-memory copy on the next save | M | H | Documented; settings tab import/export is the supported path |
+| Editing `data.json` externally while Obsidian runs is overwritten by the in-memory copy on the next save | L | H | `onExternalSettingsChange` reloads it (Obsidian ≥ 1.5.7); a device still on ≤ 0.3 keeps writing its whole copy until it upgrades |
 | `electron.shell` / `child_process` are outside the public Obsidian API | M | M | Lazy `require`, desktop-only guards, argv-only spawn; disclosed to reviewers |
 | Capture-phase `window` listener can swallow keys other plugins expect | L | M | Only handled keys are stopped; listener removed in `onClose` |
 | Full-text index grows with the vault (13.5 MB observed) | M | L | `index` settings cap size; clear button in settings |

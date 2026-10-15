@@ -11,11 +11,13 @@
  * 每條規則是一張卡：收合時只顯示「啟用 / 鍵 / 名稱 / 摘要」，展開才編輯細節。
  * 這樣十條規則仍然一眼看得完，而不是十張攤開的表單。
  */
-const { PluginSettingTab, Setting, Notice, Modal } = require("obsidian");
+const obsidian = require("obsidian");
+const { PluginSettingTab, Setting, Notice, Modal } = obsidian;
 const { defaultSettings, EXAMPLE_DECORATIONS, EXAMPLE_OPENERS, PLACEHOLDERS, OPENER_KINDS } = require("./defaults.js");
 const { LOCALES } = require("../i18n/index.js");
 const { decorate } = require("../core/decorate.js");
 const { parseKeymap } = require("../core/keymap.js");
+const { normalizeNotePath } = require("../core/bookmarknote.js");
 
 /* 分頁。加一個分頁＝在這裡加一筆，並寫一個 renderXxx。 */
 const SECTIONS = [
@@ -24,6 +26,7 @@ const SECTIONS = [
   { id: "decorations", icon: "🎨", labelKey: "settings.section.decorations" },
   { id: "search", icon: "🔍", labelKey: "settings.section.search" },
   { id: "links", icon: "🔗", labelKey: "settings.section.links" },
+  { id: "bookmarks", icon: "🔖", labelKey: "settings.section.bookmarks" },
   { id: "preview", icon: "👁", labelKey: "settings.section.preview" },
   { id: "index", icon: "🗂", labelKey: "settings.section.index" },
 ];
@@ -88,6 +91,34 @@ class RuleCard {
   }
 }
 
+/*
+ * 筆記路徑的自動完成（書籤存檔位置用）。AbstractInputSuggest 是 1.4.10 起的公開 API；
+ * class 在這裡才定義而不是放在模組層，因為測試的 obsidian 替身沒有它 ——
+ * 放在模組層的話，`extends undefined` 會讓整支設定頁連帶 main.js 都載不起來。
+ */
+function attachNoteSuggest(app, inputEl, onPick) {
+  const Base = obsidian.AbstractInputSuggest;
+  if (typeof Base !== "function") return null;
+  class NoteSuggest extends Base {
+    getSuggestions(query) {
+      const q = String(query || "").toLowerCase();
+      return app.vault.getMarkdownFiles()
+        .filter((f) => f.path.toLowerCase().includes(q))
+        .sort((a, b) => a.path.localeCompare(b.path))
+        .slice(0, 50);
+    }
+    renderSuggestion(file, el) {
+      el.setText(file.path);
+    }
+    selectSuggestion(file) {
+      inputEl.value = file.path;
+      this.close();
+      onPick(file.path);
+    }
+  }
+  return new NoteSuggest(app, inputEl);
+}
+
 /* ── 匯入 JSON 用的小視窗 ─────────────────────────────────── */
 class ImportModal extends Modal {
   constructor(app, title, onSubmit) {
@@ -127,8 +158,8 @@ class YaziSettingTab extends PluginSettingTab {
     this.section = "keys";
   }
 
-  t(key, fallback) {
-    return this.plugin.t ? this.plugin.t(key, fallback) : fallback || key;
+  t(key, fallback, vars) {
+    return this.plugin.t ? this.plugin.t(key, fallback, vars) : fallback || key;
   }
 
   async save() {
@@ -175,6 +206,7 @@ class YaziSettingTab extends PluginSettingTab {
       decorations: () => this.renderDecorations(el),
       search: () => this.renderSearch(el),
       links: () => this.renderLinks(el),
+      bookmarks: () => this.renderBookmarks(el),
       preview: () => this.renderPreview(el),
       index: () => this.renderIndex(el),
     }[this.section];
@@ -1025,6 +1057,94 @@ class YaziSettingTab extends PluginSettingTab {
         .addText((tc) => tc.setPlaceholder("status").setValue(f.field || "")
           .onChange(async (v) => { f.field = v; await this.save(); }));
     }
+  }
+
+  /* ════════════════════ 書籤 ════════════════════ */
+
+  /*
+   * 書籤存檔位置。改了就**立刻搬家**（不是只記下設定）：目前的書籤一筆不少併進新位置，
+   * 寫成功才切換（見 plugin.setBookmarksNote）。
+   * 只在離開輸入框（或按 Enter、或從建議清單挑一個）時套用，不是每打一個字就套 ——
+   * 不然打到一半的路徑每一段都會被建成一份筆記。
+   */
+  renderBookmarks(el) {
+    const s = this.plugin.settings;
+    this.header(el, this.t("settings.section.bookmarks", "Bookmarks"),
+      this.t("settings.bookmarks.desc",
+        "Where bookmarks are kept. By default they live in this plugin's data.json. If you use the vault " +
+        "on more than one device, keep them in a note instead: each bookmark is one line, so a sync " +
+        "merges line by line rather than one device overwriting the other's list."));
+
+    let busy = false;
+    const apply = async (value) => {
+      if (busy) return;
+      if (normalizeNotePath(value) === (s.bookmarksNote || "")) return;
+      busy = true;
+      try {
+        const r = await this.plugin.setBookmarksNote(value);
+        if (r.changed) {
+          new Notice(r.path
+            ? this.t("settings.bookmarks.moved", "Bookmarks are now kept in {path} ({count} moved in)", { path: r.path, count: r.added })
+            : this.t("settings.bookmarks.movedBack", "Bookmarks are kept in data.json again"));
+        }
+      } catch (e) {
+        new Notice(this.t("settings.bookmarks.failed", "Could not use {path}: {error}",
+          { path: value, error: e && e.message ? e.message : String(e) }));
+      } finally {
+        busy = false;
+        this.renderSection();
+      }
+    };
+
+    new Setting(el)
+      .setName(this.t("settings.bookmarks.note", "Bookmarks note"))
+      .setDesc(this.t("settings.bookmarks.noteDesc",
+        "Leave empty to keep bookmarks in data.json. Enter a note's path to keep them in that note: " +
+        "the bookmarks you have now are merged into it (lines already in the note are kept as they are), " +
+        "and the note is created if it does not exist. Clearing the field moves them back."))
+      .addText((tc) => {
+        tc.setPlaceholder(this.t("settings.bookmarks.notePlaceholder", "e.g. Bookmarks.md"));
+        tc.setValue(s.bookmarksNote || "");
+        tc.inputEl.addEventListener("change", () => apply(tc.getValue()));
+        attachNoteSuggest(this.app, tc.inputEl, (p) => apply(p));
+      });
+
+    const box = el.createDiv({ cls: "yazi-set-stats" });
+    box.createSpan({ text: this.t("settings.bookmarks.status", "{count} bookmarks, kept in {where}",
+      { count: this.plugin.bookmarks().length, where: s.bookmarksNote || "data.json" }) });
+    const noteFile = s.bookmarksNote ? this.app.vault.getAbstractFileByPath(s.bookmarksNote) : null;
+    if (noteFile) {
+      const open = box.createEl("button", { text: this.t("settings.bookmarks.open", "Open note") });
+      open.onclick = () => this.app.workspace.getLeaf(true).openFile(noteFile);
+    }
+
+    /* 筆記模式下 data.json 裡多出來的書籤：舊版（例如另一台還沒升級的）寫進去的 */
+    const stray = this.plugin.strayBookmarks();
+    if (stray.length) {
+      const names = stray.slice(0, 5).map((b) => b.name || b.path).join(", ") + (stray.length > 5 ? ", …" : "");
+      new Setting(el)
+        .setName(this.t("settings.bookmarks.stray", "Bookmarks left in data.json"))
+        .setDesc(this.t("settings.bookmarks.strayDesc",
+          "{count} bookmarks in data.json are not in the note ({names}). An older version of this plugin, " +
+          "probably on another device, wrote them there. They are not used; import them if you want them.",
+          { count: stray.length, names }))
+        .addButton((b) => b.setButtonText(this.t("settings.bookmarks.import", "Import into the note")).onClick(async () => {
+          try {
+            const n = await this.plugin.importStrayBookmarks();
+            new Notice(this.t("settings.bookmarks.imported", "Imported {count} bookmarks into the note", { count: n }));
+          } catch (e) {
+            new Notice(this.t("settings.bookmarks.failed", "Could not use {path}: {error}",
+              { path: s.bookmarksNote, error: e && e.message ? e.message : String(e) }));
+          }
+          this.renderSection();
+        }));
+    }
+
+    new Setting(el)
+      .setName(this.t("settings.bookmarks.local", "Kept on this device only"))
+      .setDesc(this.t("settings.bookmarks.localDesc",
+        "Most-visited counts and the sort order are kept per device in {file}. If you sync the vault " +
+        "with git, add that file to .gitignore.", { file: this.plugin.localPath() }));
   }
 
   /* ════════════════════ 預覽與行為 ════════════════════ */

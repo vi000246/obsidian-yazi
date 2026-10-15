@@ -284,12 +284,20 @@ const DEFAULT_SETTINGS = {
     excludeFolders: [],
   },
 
+  /*
+   * 書籤存檔位置。空的＝書籤存在下面的 bookmarks（data.json，0.3 以前的行為，預設不變）；
+   * 填一份筆記的路徑＝書籤改存在那份筆記，一行一個（見 core/bookmarknote.js）。
+   * 預設刻意留空：這是公開外掛，不在別人的 vault 裡自己建檔。
+   */
+  bookmarksNote: "",
+
   /* 以下是使用者資料，不是偏好設定，但住在同一個 data.json 裡 */
   bookmarks: [],
-  frecency: {},
-  sort: { field: "name", reverse: false, foldersFirst: true },
-  // 搜尋結果自己一份：natural ＝不重排，留住相關度（見 YaziModal.sortCfg）
-  sortSearch: { field: "natural", reverse: false, foldersFirst: true },
+  /*
+   * frecency 與排序**不在這裡**：它們只屬於一台機器，存在 plugin 資料夾的 local.json
+   * （見 main.js 的 LOCAL_FILE）。0.3 以前存在 data.json 的那幾個欄位會原地保留，
+   * 升級時從那裡搬一次。
+   */
 };
 
 /** 深拷貝一份預設值（呼叫端會就地改，不能共用同一個物件）。 */

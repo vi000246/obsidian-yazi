@@ -559,4 +559,34 @@ module.exports = {
   "settings.decorations.readme": "開啟 README",
   "settings.decorations.addThis": "加入",
   "settings.decorations.sampleValue": "值",
+
+  /* ── 書籤存在哪 ── */
+  "settings.section.bookmarks": "書籤",
+  "settings.bookmarks.desc":
+    "書籤存在哪裡。預設存在這個外掛的 data.json。同一個 vault 在好幾台裝置上用的話，" +
+    "建議改存在一份筆記：一個書籤一行，同步時逐行合併，不會一台把另一台的清單整份蓋掉。",
+  "settings.bookmarks.note": "書籤存檔位置",
+  "settings.bookmarks.noteDesc":
+    "留空＝存在 data.json。填一份筆記的路徑＝改存在那份筆記：現有的書籤會併進去" +
+    "（筆記裡原本就有的行照舊不動），筆記不存在會自動建立。清空這一欄會把書籤搬回 data.json。",
+  "settings.bookmarks.notePlaceholder": "例如 Bookmarks.md",
+  "settings.bookmarks.status": "{count} 個書籤，存在 {where}",
+  "settings.bookmarks.open": "打開筆記",
+  "settings.bookmarks.moved": "書籤改存在 {path}（搬進 {count} 筆）",
+  "settings.bookmarks.movedBack": "書籤改回存在 data.json",
+  "settings.bookmarks.failed": "無法使用 {path}：{error}",
+  "settings.bookmarks.stray": "留在 data.json 的書籤",
+  "settings.bookmarks.strayDesc":
+    "data.json 裡有 {count} 個書籤不在筆記裡（{names}）。那是舊版外掛（多半是另一台還沒升級的裝置）" +
+    "寫進去的，目前沒有被使用；要的話可以匯入。",
+  "settings.bookmarks.import": "匯入筆記",
+  "settings.bookmarks.imported": "已匯入 {count} 個書籤到筆記",
+  "settings.bookmarks.local": "只存在這台裝置",
+  "settings.bookmarks.localDesc":
+    "常用紀錄與排序方式每台裝置各存一份，在 {file}。用 git 同步 vault 的話，請把這個檔加進 .gitignore。",
+  "notice.bookmarkNoteIsFolder": "{path} 是資料夾，不是筆記",
+  "notice.bookmarkSaveFailed": "書籤沒存進去：{error}",
+  "bookmarks.noteIntro":
+    "Yazi Explorer 的書籤，一行一個：快捷字母（可省略）、檔案用 wikilink 或資料夾用反引號包住的 `路徑`、" +
+    "名稱（可省略）。可以直接手動編輯；不是書籤的行外掛不會動。",
 };

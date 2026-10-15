@@ -575,4 +575,38 @@ module.exports = {
   "settings.decorations.readme": "Open the README",
   "settings.decorations.addThis": "Add",
   "settings.decorations.sampleValue": "value",
+
+  /* ── bookmarks: where they are kept ── */
+  "settings.section.bookmarks": "Bookmarks",
+  "settings.bookmarks.desc":
+    "Where bookmarks are kept. By default they live in this plugin's data.json. If you use the vault " +
+    "on more than one device, keep them in a note instead: each bookmark is one line, so a sync " +
+    "merges line by line rather than one device overwriting the other's list.",
+  "settings.bookmarks.note": "Bookmarks note",
+  "settings.bookmarks.noteDesc":
+    "Leave empty to keep bookmarks in data.json. Enter a note's path to keep them in that note: " +
+    "the bookmarks you have now are merged into it (lines already in the note are kept as they are), " +
+    "and the note is created if it does not exist. Clearing the field moves them back.",
+  "settings.bookmarks.notePlaceholder": "e.g. Bookmarks.md",
+  "settings.bookmarks.status": "{count} bookmarks, kept in {where}",
+  "settings.bookmarks.open": "Open note",
+  "settings.bookmarks.moved": "Bookmarks are now kept in {path} ({count} moved in)",
+  "settings.bookmarks.movedBack": "Bookmarks are kept in data.json again",
+  "settings.bookmarks.failed": "Could not use {path}: {error}",
+  "settings.bookmarks.stray": "Bookmarks left in data.json",
+  "settings.bookmarks.strayDesc":
+    "{count} bookmarks in data.json are not in the note ({names}). An older version of this plugin, " +
+    "probably on another device, wrote them there. They are not used; import them if you want them.",
+  "settings.bookmarks.import": "Import into the note",
+  "settings.bookmarks.imported": "Imported {count} bookmarks into the note",
+  "settings.bookmarks.local": "Kept on this device only",
+  "settings.bookmarks.localDesc":
+    "Most-visited counts and the sort order are kept per device in {file}. If you sync the vault " +
+    "with git, add that file to .gitignore.",
+  "notice.bookmarkNoteIsFolder": "{path} is a folder, not a note",
+  "notice.bookmarkSaveFailed": "Could not save the bookmark: {error}",
+  "bookmarks.noteIntro":
+    "Bookmarks for Yazi Explorer, one per line: a shortcut letter (optional), then the file as a " +
+    "wikilink or the folder as a `path` in backticks, then a name (optional). You can edit this note " +
+    "by hand; lines that are not bookmarks are left alone.",
 };

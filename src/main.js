@@ -51,6 +51,10 @@ const { outlineItems, headingLines } = require("./core/outline.js");
 const { collectRelations } = require("./core/relations.js");
 const { aliasesOf } = require("./core/aliases.js");
 const { parseTaskIdQuery, taskIdOf, matchesTaskId } = require("./core/taskid.js");
+const {
+  parseNote, noteText, noteBookmarks, upsertEntry, removeEntry, assignEntryKey,
+  retargetEntries, mergeEntries, movedPath, normalizeNotePath,
+} = require("./core/bookmarknote.js");
 
 /*
  * 存檔進來的設定 ＋ 預設值。
@@ -298,6 +302,14 @@ const INDEX_BATCH = 64;         // 建索引時一次併發讀幾個檔
 const INDEX_SKIP_ABOVE = 1048576;
 const INDEX_FILE = "text-index.json";
 const INDEX_VERSION = 1;
+/*
+ * 只屬於這台機器的狀態：常用（frecency）與排序。跟全文索引一樣放在 plugin 資料夾，
+ * 但**不在 data.json 裡** —— frecency 每開一個檔就變一次，跟設定、書籤擠在同一份
+ * 會被同步的檔案裡，兩台同時用就一定衝突，而且一台的舊狀態會整份蓋掉另一台的。
+ * 用 git 同步 vault 的人要把它加進 .gitignore（README 有寫）。
+ */
+const LOCAL_FILE = "local.json";
+const LOCAL_VERSION = 1;
 const INDEX_SAVE_DELAY = 30000; // 索引變動後隔多久才寫檔（避免每次存檔都寫十幾 MB）
 const CTX_MAX_LINES = 3;        // 中欄每個結果最多顯示幾行上下文
 const CTX_BEFORE = 28;          // 長行截斷：命中位置前保留幾個字
@@ -907,6 +919,8 @@ class YaziModal extends Modal {
   }
 
   onClose() {
+    // 書籤筆記被外部改掉時 plugin 會叫目前開著的視窗重畫清單（見 refreshOpenList）
+    if (this.plugin && this.plugin.activeModal === this) this.plugin.activeModal = null;
     try {
       (this.hostWin || window).removeEventListener("keydown", this.onKey, true);
     } catch (e) {}
@@ -936,7 +950,8 @@ class YaziModal extends Modal {
 
   /*
    * 資料夾在前、再按名稱排。用 zh-Hant 的 collator，中文檔名才不是照 code point 排。
-   * 排序設定放在 plugin 上並寫進 data.json —— 每次開瀏覽器都要重選會很煩。
+   * 排序設定放在 plugin 上並寫進這台機器的 local.json（plugin.data，見 LOCAL_FILE）——
+   * 每次開瀏覽器都要重選會很煩。
    *
    * **搜尋結果有自己的一份**（sortSearch，預設 natural ＝相關度）。
    * 共用一份的話，你在檔案瀏覽選的「照建立時間排」會跟著灌進每一次搜尋，
@@ -2811,7 +2826,13 @@ class YaziModal extends Modal {
         this.buildList();
         this.render();
       }
-    });
+    }, (e) => this.bookmarkSaveFailed(e));
+  }
+
+  /* 書籤存不進去（書籤筆記的路徑是資料夾、檔案被鎖住…）一定要說出來，不然像是按了沒反應 */
+  bookmarkSaveFailed(e) {
+    console.error("[yazi-explorer] could not save the bookmark", e);
+    new Notice(this.t("notice.bookmarkSaveFailed", "Could not save the bookmark: {error}", { error: msg(e) }));
   }
 
   // 書籤清單裡按 e：改名字（路徑不動）
@@ -2821,7 +2842,12 @@ class YaziModal extends Modal {
     this.promptFor(this.t("prompt.bookmarkName", "Bookmark as: "), item.title || "", async (name) => {
       const title = (name || "").trim();
       if (!title) return;
-      await this.plugin.addBookmark(item.path, title);   // 已存在＝改名
+      try {
+        await this.plugin.addBookmark(item.path, title);   // 已存在＝改名
+      } catch (e) {
+        this.bookmarkSaveFailed(e);
+        return;
+      }
       this.buildList();
       this.render();
       new Notice(this.t("notice.bookmarkRenamed", "Bookmark renamed: {name}", { name: title }));
@@ -2856,6 +2882,9 @@ class YaziModal extends Modal {
       // 指定完之後游標跟著那筆走（排序會變，有字母的會浮到上面）
       const idx = this.listItems.findIndex((x) => x.path === item.path);
       if (idx >= 0) this.listIndex = idx;
+      this.render();
+    }, (e) => {
+      this.bookmarkSaveFailed(e);
       this.render();
     });
   }
@@ -5799,32 +5828,27 @@ function migrateBookmarks(raw) {
 
 module.exports = class YaziExplorer extends Plugin {
   async onload() {
-    // 書籤存在本外掛自己的 data.json（loadData/saveData 是公開 API）。
-    // 刻意不寫進 Obsidian 核心的「書籤」外掛：那要走 app.internalPlugins 的內部
-    // API，而且核心書籤的群組結構跟這裡「字母 → 路徑」的 mark 模型對不起來。
-    // 兩份清單用途本來就不同：這裡是導航跳點，核心書籤是常用筆記。
-    const raw = await this.loadData();
     /*
-     * 設定與使用者資料住在同一份 data.json：
-     *   settings —— 偏好（openers / 預覽 / 索引…），有預設值，設定頁會改
-     *   data     —— 書籤、frecency、排序，是使用者累積出來的東西
-     * 兩者共用同一個物件（this.data === this.settings），只是程式碼裡用不同的名字
-     * 表達意圖。分成兩份檔案的話，「設定頁存檔」與「加書籤存檔」會互相蓋掉對方。
+     * 資料分三處放，依「要不要跨機器同步」與「誰會改它」決定：
+     *
+     *   this.settings —— data.json（loadData/saveData，會跟著 vault 同步）：
+     *                    偏好設定、儲存的檢視，以及預設情況下的書籤。
+     *                    別台改了（git pull、同步服務）會經 onExternalSettingsChange 重新載入。
+     *   this.data     —— local.json（只屬於這台機器，見 LOCAL_FILE）：frecency 與排序。
+     *   書籤筆記      —— 設定了「書籤存檔位置」時，書籤改存在那份筆記裡，一行一個
+     *                    （格式見 core/bookmarknote.js）。每次改書籤都先讀筆記現況、
+     *                    只改動到的那一行。
+     *
+     * 0.3 以前三者全擠在 data.json、而且每次整份覆寫：兩台同時用同一個 vault 時，
+     * 一台用記憶體裡的舊狀態存檔，就把另一台剛加的書籤整份蓋掉（frecency 每開一個檔
+     * 就存一次，所以幾乎每次都會發生）。
+     *
+     * 書籤刻意不寫進 Obsidian 核心的「書籤」外掛：那要走 app.internalPlugins 的內部
+     * API，而且核心書籤的群組結構跟這裡「字母 → 路徑」的 mark 模型對不起來。
      */
-    this.settings = mergeSettings(defaultSettings(), raw);
-    this.data = this.settings;
-    this._t = createTranslator(this.settings.locale);
-    this.data.bookmarks = migrateBookmarks(raw && raw.bookmarks);
-    this.data.sort = Object.assign(
-      { field: "name", reverse: false, foldersFirst: true },
-      raw && raw.sort
-    );
-    // 搜尋預設 natural ＝不重排，留住相關度（見 YaziModal.sortCfg）
-    this.data.sortSearch = Object.assign(
-      { field: "natural", reverse: false, foldersFirst: true },
-      raw && raw.sortSearch
-    );
-    this.data.frecency = (raw && raw.frecency) || {};
+    const raw = await this.loadData();
+    this.applySettings(raw);
+    await this.loadLocal(raw);
     this.addSettingTab(new YaziSettingTab(this.app, this));
     /*
      * 剪貼簿只活在記憶體（跨 modal 開關，但不跨 Obsidian 重啟）。
@@ -5838,9 +5862,15 @@ module.exports = class YaziExplorer extends Plugin {
      * 分類圖示從 vault 的 docCategories.js 讀（單一來源，見常數區），失敗就用 fallback。
      */
     FM_APP = this.app;
-    T = (k, f, v) => this.t(k, f, v);
-    FM_RULES = this.settings.decorations || [];
-    setFacets(this.settings.facets);
+
+    /*
+     * 書籤筆記要等 vault 載完才讀得到（wikilink 要靠檔案清單解析），vault 事件也是：
+     * 啟動期間 Obsidian 會對每個既有檔案發一次 create，那些不是真的變動。
+     */
+    this.app.workspace.onLayoutReady(() => {
+      this.registerBookmarkEvents();
+      this.loadBookmarkNote();
+    });
 
     this.addCommand({
       id: "open",
@@ -6126,7 +6156,113 @@ module.exports = class YaziExplorer extends Plugin {
       window.clearTimeout(this.frecencySaveTimer);
       this.frecencySaveTimer = null;
       this.pruneFrecency();
-      this.saveData(this.data);
+      this.saveLocal();
+    }
+    this.activeModal = null;
+  }
+
+  /* ── 設定（data.json）── */
+
+  /**
+   * 把 data.json 的內容套成 this.settings（onload 與 onExternalSettingsChange 共用）。
+   * **就地替換**同一個物件而不是換一個新的：設定頁手上拿著 this.plugin.settings 的參照，
+   * 換成新物件的話，設定頁接下來的修改會改到已經沒人用的舊物件上。
+   */
+  applySettings(raw) {
+    const next = mergeSettings(defaultSettings(), raw);
+    next.bookmarks = migrateBookmarks(raw && raw.bookmarks);
+    if (this.settings && typeof this.settings === "object") {
+      for (const k of Object.keys(this.settings)) delete this.settings[k];
+      Object.assign(this.settings, next);
+    } else {
+      this.settings = next;
+    }
+    // 磁碟上目前是什麼：onExternalSettingsChange 靠它分辨「別人改的」與「自己剛寫的」
+    this.lastSettingsJson = raw ? JSON.stringify(raw) : null;
+    this.bmCache = null;
+    this.reloadTranslator();
+    FM_RULES = this.settings.decorations || [];
+    setFacets(this.settings.facets);
+  }
+
+  /*
+   * data.json 被外部改掉（git pull、Obsidian Sync、別的同步工具）。Obsidian 1.5.7 起會呼叫。
+   *
+   * 不重新載入的話，下一次存檔（改設定、存檢視、預設模式下的加書籤）會用記憶體裡的
+   * 舊內容把剛同步進來的整份蓋回去 —— 那正是 0.3 書籤一直不見的原因。
+   *
+   * 這支**只讀不寫**，所以就算 Obsidian 對我們自己的寫入也發了這個事件，也不會變成迴圈；
+   * 內容跟上次讀到或寫出去的一樣就直接跳過，連重畫都省掉。
+   */
+  async onExternalSettingsChange() {
+    let raw;
+    try {
+      raw = await this.loadData();
+    } catch (e) {
+      // 寫到一半、或 git 合併留下衝突標記：保留記憶體裡的版本，不要把設定清空
+      console.error("[yazi-explorer] data.json changed on disk but could not be read; keeping the loaded settings", e);
+      return;
+    }
+    if (!raw || typeof raw !== "object") return;
+    if (this.lastSettingsJson !== null && JSON.stringify(raw) === this.lastSettingsJson) return;
+    const prevNote = this.bookmarkNotePath();
+    this.applySettings(raw);
+    if (this.bookmarkNotePath() !== prevNote) await this.loadBookmarkNote();
+    this.refreshOpenList();
+  }
+
+  /* 設定頁與 modal 都走這一支存檔。 */
+  async saveSettings() {
+    this.lastSettingsJson = JSON.stringify(this.settings);
+    await this.saveData(this.settings);
+  }
+
+  /* ── 這台機器自己的狀態（local.json）── */
+
+  localPath() {
+    return this.manifest.dir + "/" + LOCAL_FILE;
+  }
+
+  /*
+   * 讀 local.json。還沒有這個檔（剛從 0.3 升上來，或這台第一次用）就從 data.json 裡
+   * 舊版留下的 frecency／排序搬過來，並立刻寫出 local.json —— 之後就只認 local.json，
+   * 所以搬家只發生一次，重跑也不會重複搬。
+   *
+   * data.json 裡那幾個舊欄位**原地保留、不刪**：另一台還沒升級的機器還在用它們，
+   * 而它升級時也要從那裡搬自己的常用紀錄（local.json 不會同步過去）。
+   * 檔案壞了也走同一條路：退回 data.json 的舊資料，總比歸零好。
+   */
+  async loadLocal(raw) {
+    const adapter = this.app.vault.adapter;
+    let saved = null;
+    try {
+      if (await adapter.exists(this.localPath())) {
+        const obj = JSON.parse(await adapter.read(this.localPath()));
+        if (obj && typeof obj === "object") saved = obj;
+      }
+    } catch (e) {
+      console.error("[yazi-explorer] local.json is unreadable; rebuilding it from data.json", e);
+    }
+    const src = saved || raw || {};
+    this.data = {
+      frecency: src.frecency && typeof src.frecency === "object" && !Array.isArray(src.frecency) ? src.frecency : {},
+      sort: Object.assign({ field: "name", reverse: false, foldersFirst: true }, src.sort),
+      // 搜尋預設 natural ＝不重排，留住相關度（見 YaziModal.sortCfg）
+      sortSearch: Object.assign({ field: "natural", reverse: false, foldersFirst: true }, src.sortSearch),
+    };
+    if (!saved) await this.saveLocal();
+  }
+
+  async saveLocal() {
+    try {
+      await this.app.vault.adapter.write(this.localPath(), JSON.stringify({
+        version: LOCAL_VERSION,
+        frecency: this.data.frecency || {},
+        sort: this.data.sort,
+        sortSearch: this.data.sortSearch,
+      }));
+    } catch (e) {
+      console.error("[yazi-explorer] could not write local.json", e);
     }
   }
 
@@ -6161,19 +6297,19 @@ module.exports = class YaziExplorer extends Plugin {
 
   async forgetFrecency(path) {
     if (this.data.frecency) delete this.data.frecency[path];
-    await this.saveData(this.data);
+    await this.saveLocal();
   }
 
   /*
-   * 每開一個檔就寫一次 data.json 太吵（書籤、排序都在同一個檔），所以延遲合併寫。
-   * 寫之前順手修剪：只留分數最高的 FRECENCY_KEEP 筆，data.json 才不會無限長大。
+   * 每開一個檔就寫一次檔太吵，所以延遲合併寫（寫的是 local.json，不會同步）。
+   * 寫之前順手修剪：只留分數最高的 FRECENCY_KEEP 筆，檔案才不會無限長大。
    */
   scheduleFrecencySave() {
     if (this.frecencySaveTimer) window.clearTimeout(this.frecencySaveTimer);
     this.frecencySaveTimer = window.setTimeout(() => {
       this.frecencySaveTimer = null;
       this.pruneFrecency();
-      this.saveData(this.data);
+      this.saveLocal();
     }, 5000);
   }
 
@@ -6183,11 +6319,6 @@ module.exports = class YaziExplorer extends Plugin {
     const next = {};
     for (const r of ranked.slice(0, FRECENCY_KEEP)) next[r.path] = this.data.frecency[r.path];
     this.data.frecency = next;
-  }
-
-  /* 設定頁與 modal 都走這一支存檔（data 與 settings 是同一個物件，見 onload）。 */
-  async saveSettings() {
-    await this.saveData(this.settings);
   }
 
   /** 語言換了之後重建翻譯函式（設定頁會呼叫）。 */
@@ -6204,13 +6335,13 @@ module.exports = class YaziExplorer extends Plugin {
   setSort(cfg, forSearch) {
     if (forSearch) this.data.sortSearch = cfg;
     else this.data.sort = cfg;
-    this.saveData(this.data);
+    this.saveLocal();
   }
 
   // 預覽欄渲染 markdown（,p）。存進 settings.preview，跟設定頁是同一個值
   setRenderPreview(on) {
     this.settings.preview.renderMarkdown = !!on;
-    this.saveData(this.settings);
+    this.saveSettings();
   }
 
   /* ── 儲存的檢視（gv）──
@@ -6220,7 +6351,7 @@ module.exports = class YaziExplorer extends Plugin {
    * 這種檢視要的行為。快捷字母沿用書籤那一套（清單裡 m + 字母指定，再按該字母就開）。
    */
   views() {
-    return (this.data && this.data.views) || [];
+    return (this.settings && this.settings.views) || [];
   }
 
   viewByKey(key) {
@@ -6239,14 +6370,14 @@ module.exports = class YaziExplorer extends Plugin {
     if (replaced) view.key = view.key || list[at].key;   // 蓋掉時保留原本的快捷字母
     if (replaced) list[at] = view;
     else list.push(view);
-    this.data.views = list;
-    await this.saveData(this.data);
+    this.settings.views = list;
+    await this.saveSettings();
     return replaced;
   }
 
   async removeView(id) {
-    this.data.views = this.views().filter((v) => v.id !== id);
-    await this.saveData(this.data);
+    this.settings.views = this.views().filter((v) => v.id !== id);
+    await this.saveSettings();
   }
 
   // 搶字母的語意與書籤一致（見 assignBookmarkKey 的說明）
@@ -6259,12 +6390,38 @@ module.exports = class YaziExplorer extends Plugin {
       }
       if (v.id === id) v.key = key || null;
     }
-    await this.saveData(this.data);
+    await this.saveSettings();
     return stolenFrom;
   }
 
+  /* ── 書籤 ──
+   *
+   * 兩種存法，由設定的「書籤存檔位置」（settings.bookmarksNote）決定：
+   *   留空（預設）→ 跟 0.3 一樣存在 data.json 的 bookmarks
+   *   一份筆記的路徑 → 存在那份筆記，一行一個（格式與理由見 core/bookmarknote.js）
+   * 對外的介面（bookmarks / findBookmark / bookmarkByKey / addBookmark / removeBookmark /
+   * assignBookmarkKey）兩種存法一樣，瀏覽器那邊不必知道書籤住在哪。
+   *
+   * 筆記模式下 data.json 裡的 bookmarks 是**收件匣**，不是書籤：只有還沒升級的舊版
+   * （例如另一台機器）會往那裡寫。讀書籤時完全不看它 —— 舊版用記憶體裡的舊清單整份
+   * 寫回去，正是要擋掉的那件事。設定頁會列出「data.json 裡有、筆記裡沒有」的幾筆，
+   * 讓人自己決定要不要匯入。
+   */
+
+  bookmarkNotePath() {
+    return (this.settings && this.settings.bookmarksNote) || "";
+  }
+
+  noteMode() {
+    return !!this.bookmarkNotePath();
+  }
+
   bookmarks() {
-    return (this.data && this.data.bookmarks) || [];
+    if (!this.noteMode()) return (this.settings && this.settings.bookmarks) || [];
+    // 解析結果快取起來：wikilink 要逐筆查 metadataCache，而 '+字母 每按一次都會讀清單。
+    // 筆記內容變了、vault 有檔案新增／刪除／改名時清掉（見 registerBookmarkEvents）。
+    if (!this.bmCache) this.bmCache = noteBookmarks(this.noteDoc || parseNote(""), (e) => this.notePathOf(e));
+    return this.bmCache;
   }
 
   findBookmark(path) {
@@ -6280,20 +6437,27 @@ module.exports = class YaziExplorer extends Plugin {
    * 「已經加過了就什麼都不做」對使用者沒有用 —— 會再按一次 m 的人多半就是想改名。
    */
   async addBookmark(path, name) {
+    if (this.noteMode()) {
+      return this.editNote((doc, pathOf) => upsertEntry(doc, path, name, (p) => this.noteTargetFor(p), pathOf));
+    }
     const existing = this.findBookmark(path);
     if (existing) {
       if (name) existing.name = name;
-      await this.saveData(this.data);
+      await this.saveSettings();
       return false;
     }
-    this.data.bookmarks.push({ path, name: name || null, key: null, added: Date.now() });
-    await this.saveData(this.data);
+    this.settings.bookmarks.push({ path, name: name || null, key: null, added: Date.now() });
+    await this.saveSettings();
     return true;
   }
 
   async removeBookmark(path) {
-    this.data.bookmarks = this.bookmarks().filter((b) => b.path !== path);
-    await this.saveData(this.data);
+    if (this.noteMode()) {
+      await this.editNote((doc, pathOf) => removeEntry(doc, path, pathOf));
+      return;
+    }
+    this.settings.bookmarks = this.bookmarks().filter((b) => b.path !== path);
+    await this.saveSettings();
   }
 
   /*
@@ -6302,6 +6466,9 @@ module.exports = class YaziExplorer extends Plugin {
    * 拒絕則會變成「按了沒反應」，那才難查。key 傳 null 就是清除。
    */
   async assignBookmarkKey(path, key) {
+    if (this.noteMode()) {
+      return this.editNote((doc, pathOf) => assignEntryKey(doc, path, key, pathOf));
+    }
     let stolenFrom = null;
     for (const b of this.bookmarks()) {
       if (key && b.key === key && b.path !== path) {
@@ -6310,8 +6477,250 @@ module.exports = class YaziExplorer extends Plugin {
       }
       if (b.path === path) b.key = key || null;
     }
-    await this.saveData(this.data);
+    await this.saveSettings();
     return stolenFrom;
+  }
+
+  /** 筆記裡的一行指向 vault 的哪個路徑。wikilink 照 Obsidian 的規則解析（相對於筆記本身）。 */
+  notePathOf(entry) {
+    if (entry.kind === "path") return entry.ref;
+    const mc = this.app.metadataCache;
+    const f = mc && mc.getFirstLinkpathDest ? mc.getFirstLinkpathDest(entry.ref, this.bookmarkNotePath()) : null;
+    if (f) return f.path;
+    // 解析不到（檔案不在了）：猜一個路徑，清單上會標成「(已不存在)」而不是消失
+    return /\.[A-Za-z0-9]+$/.test(entry.ref) ? entry.ref : entry.ref + ".md";
+  }
+
+  /*
+   * 新書籤在筆記裡寫成什麼。檔案用 wikilink —— Obsidian 改名或搬檔時會自己更新它，
+   * 書籤就不會失效；寫法（最短路徑或完整路徑）跟著使用者的「新連結格式」設定走。
+   * 資料夾沒有 wikilink 可用，寫成反引號路徑，改名時由 plugin 自己更新（registerBookmarkEvents）。
+   * 檔名含有 wikilink 裝不下的字元（[ ] | # ^）也退回路徑寫法。
+   */
+  noteTargetFor(path) {
+    const f = this.app.vault.getAbstractFileByPath(path);
+    if (f && !isFolder(f)) {
+      let link = null;
+      try {
+        link = this.app.metadataCache.fileToLinktext(f, this.bookmarkNotePath(), true);
+      } catch (e) {
+        link = null;
+      }
+      if (link && !/[\[\]|#^]/.test(link)) return "[[" + link + "]]";
+    }
+    return "`" + path + "`";
+  }
+
+  /*
+   * 改筆記的唯一入口：**讀磁碟上的現況 → 只改這次動到的那幾行 → 寫回**。
+   * 用 vault.process（讀改寫一次完成），而且所有修改排成一列依序做，
+   * 這樣就算別台剛同步進來新內容、或同時有兩個修改，也不會用舊內容蓋掉新內容。
+   * fn(doc, pathOf) 就地修改 doc，回傳值原樣交給呼叫端。
+   */
+  editNote(fn) {
+    const pathOf = (e) => this.notePathOf(e);
+    const run = async () => {
+      const file = await this.ensureBookmarkNote();
+      /* 先試算一次：結果跟現況一樣（改成同一個名字、資料夾改名的重複事件…）就不寫檔，
+         省掉一次沒有內容變動的寫入與它引發的 modify 事件 */
+      const cur0 = await this.app.vault.read(file);
+      const probe = parseNote(cur0);
+      let out = fn(probe, pathOf);
+      if (noteText(probe) === cur0) {
+        this.setNoteText(cur0, false);
+        return out;
+      }
+      const text = await this.app.vault.process(file, (cur) => {
+        const doc = parseNote(cur);
+        out = fn(doc, pathOf);
+        return noteText(doc);
+      });
+      this.setNoteText(typeof text === "string" ? text : await this.app.vault.read(file), false);
+      return out;
+    };
+    const p = (this.noteQueue || Promise.resolve()).then(run, run);
+    this.noteQueue = p.catch(() => {});
+    return p;
+  }
+
+  /* 書籤筆記不存在就建一份（連資料夾），開頭放一段格式說明 */
+  async ensureBookmarkNote() {
+    const path = this.bookmarkNotePath();
+    const v = this.app.vault;
+    const hit = v.getAbstractFileByPath(path);
+    if (hit && !isFolder(hit)) return hit;
+    if (hit) throw new Error(this.t("notice.bookmarkNoteIsFolder", "{path} is a folder, not a note", { path }));
+    const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    if (dir && !v.getAbstractFileByPath(dir)) await v.createFolder(dir);
+    return v.create(path, this.t("bookmarks.noteIntro",
+      "Bookmarks for Yazi Explorer, one per line: a shortcut letter (optional), then the file as a " +
+      "wikilink or the folder as a `path` in backticks, then a name (optional). You can edit this note " +
+      "by hand; lines that are not bookmarks are left alone.") + "\n");
+  }
+
+  /* 讀書籤筆記（啟動、切換存檔位置、筆記被外部改掉時） */
+  async loadBookmarkNote() {
+    const seq = (this.noteSeq = (this.noteSeq || 0) + 1);
+    const path = this.bookmarkNotePath();
+    let text = "";
+    if (path) {
+      const f = this.app.vault.getAbstractFileByPath(path);
+      if (f && !isFolder(f)) {
+        try {
+          text = await this.app.vault.read(f);
+        } catch (e) {
+          console.error("[yazi-explorer] could not read the bookmarks note", e);
+          return;
+        }
+      }
+    }
+    if (seq !== this.noteSeq) return;     // 讀的期間又有更新的一次在讀，以那次為準
+    this.setNoteText(text, true);
+  }
+
+  setNoteText(text, fromOutside) {
+    // 自己剛寫完的內容最新：還在讀的那一次（可能讀到寫入前的內容）作廢
+    if (!fromOutside) this.noteSeq = (this.noteSeq || 0) + 1;
+    const changed = text !== this.noteText;
+    this.noteText = text;
+    this.noteDoc = parseNote(text);
+    this.bmCache = null;
+    // 自己改的不用重畫：發動修改的那個畫面會自己重建清單
+    if (changed && fromOutside) this.refreshOpenList("bookmarks");
+  }
+
+  /*
+   * 開著的瀏覽器正在看書籤（或檢視）清單時，資料從外面變了就重畫 ——
+   * 「另一台 pull 進來的書籤，要關掉重開才看得到」不算同步。
+   */
+  refreshOpenList(kind) {
+    const m = this.activeModal;
+    if (!m || (m.view !== "bookmarks" && m.view !== "views")) return;
+    if (kind && m.view !== kind) return;
+    try {
+      m.buildList();
+      m.render();
+    } catch (e) {
+      console.error("[yazi-explorer] could not refresh the open list", e);
+    }
+  }
+
+  /*
+   * vault 事件：
+   *   - 書籤筆記被改（別台 pull 進來、直接打開編輯、自己寫入）→ 重讀；內容沒變就什麼都不做，
+   *     所以自己寫入引發的 modify 不會變成迴圈（重讀從不寫檔）
+   *   - 任何新增／刪除／改名 → wikilink 可能解析到別的地方了，清掉快取
+   *   - 改名或搬移：資料夾書籤（反引號路徑）由這裡改寫；檔案書籤是 wikilink，
+   *     Obsidian 自己會更新連結 —— 兩邊都改會互相踩到，所以這裡不碰。
+   *     書籤筆記本身被改名或搬走，「書籤存檔位置」跟著改。
+   *     data.json 模式沒有連結可更新，書籤的路徑在這裡直接改。
+   */
+  registerBookmarkEvents() {
+    const v = this.app.vault;
+    const isNote = (f) => f && this.noteMode() && f.path === this.bookmarkNotePath();
+    this.registerEvent(v.on("modify", (f) => { if (isNote(f)) this.loadBookmarkNote(); }));
+    this.registerEvent(v.on("create", (f) => {
+      this.bmCache = null;
+      if (isNote(f)) this.loadBookmarkNote();
+    }));
+    this.registerEvent(v.on("delete", (f) => {
+      this.bmCache = null;
+      if (isNote(f)) this.setNoteText("", true);
+    }));
+    this.registerEvent(v.on("rename", (f, oldPath) => {
+      this.bmCache = null;
+      this.followRename(f.path, oldPath);
+    }));
+  }
+
+  async followRename(newPath, oldPath) {
+    try {
+      if (!this.noteMode()) {
+        let changed = false;
+        for (const b of this.settings.bookmarks || []) {
+          const next = movedPath(b.path, oldPath, newPath);
+          if (next !== null) {
+            b.path = next;
+            changed = true;
+          }
+        }
+        if (changed) await this.saveSettings();
+        return;
+      }
+      const notePath = movedPath(this.bookmarkNotePath(), oldPath, newPath);
+      if (notePath !== null) {
+        this.settings.bookmarksNote = notePath;
+        await this.saveSettings();
+        await this.loadBookmarkNote();
+        return;
+      }
+      // 先在記憶體裡的那份看看有沒有受影響的行，沒有就不必動檔案
+      const touched = ((this.noteDoc && this.noteDoc.entries) || [])
+        .some((e) => e.kind === "path" && movedPath(e.ref, oldPath, newPath) !== null);
+      if (touched) await this.editNote((doc) => retargetEntries(doc, oldPath, newPath));
+    } catch (e) {
+      console.error("[yazi-explorer] could not update bookmarks after a rename", e);
+    }
+  }
+
+  /*
+   * 改「書籤存檔位置」（設定頁呼叫）。**一筆不少**：目前的書籤（不管原本存在 data.json
+   * 還是另一份筆記）先併進新的位置、確定寫成功了才切換；寫失敗就維持原狀並把錯誤丟回去。
+   *   data.json → 筆記：併進筆記（筆記原有的不覆蓋），然後清掉 data.json 的 bookmarks ——
+   *                     它們已經搬走了；之後那裡再出現的，就是舊版寫的（見上方「收件匣」）
+   *   筆記 → 另一份筆記：同樣是合併
+   *   筆記 → 留空：筆記裡的書籤寫回 data.json，筆記本身不動
+   * 回傳 { changed, added, path }。
+   */
+  async setBookmarksNote(input) {
+    const next = normalizeNotePath(input);
+    const prev = this.bookmarkNotePath();
+    if (next === prev) return { changed: false, added: 0, path: next };
+    const carry = this.bookmarks().map((b) => ({
+      path: b.path, name: b.name || null, key: b.key || null, added: b.added || 0,
+    }));
+    let added = 0;
+    if (next) {
+      this.settings.bookmarksNote = next;
+      try {
+        await this.loadBookmarkNote();
+        added = await this.editNote((doc, pathOf) => mergeEntries(doc, carry, (p) => this.noteTargetFor(p), pathOf));
+      } catch (e) {
+        this.settings.bookmarksNote = prev;
+        await this.loadBookmarkNote();
+        throw e;
+      }
+      if (!prev) this.settings.bookmarks = [];
+    } else {
+      // 筆記的行號換成時間戳，data.json 那邊「新到舊」的順序才跟筆記的上下順序一致。
+      // 收件匣裡筆記沒有的那幾筆（舊版寫的）也一起留下 —— 搬回來不能比搬過去少
+      const stray = this.strayBookmarks();
+      const base = Date.now() - carry.length;
+      this.settings.bookmarks = carry.map((b, i) => Object.assign({}, b, { added: base + i })).concat(stray);
+      this.settings.bookmarksNote = "";
+      this.setNoteText("", false);
+    }
+    this.bmCache = null;
+    await this.saveSettings();
+    this.refreshOpenList("bookmarks");
+    return { changed: true, added, path: next };
+  }
+
+  /** 筆記模式下，data.json 裡有、筆記裡沒有的書籤（舊版寫進去的） */
+  strayBookmarks() {
+    if (!this.noteMode()) return [];
+    const have = new Set(this.bookmarks().map((b) => b.path));
+    return migrateBookmarks(this.settings.bookmarks).filter((b) => b && b.path && !have.has(b.path));
+  }
+
+  /* 把那幾筆併進筆記，然後清空收件匣。回傳加了幾筆 */
+  async importStrayBookmarks() {
+    const stray = this.strayBookmarks();
+    if (!stray.length) return 0;
+    const added = await this.editNote((doc, pathOf) => mergeEntries(doc, stray, (p) => this.noteTargetFor(p), pathOf));
+    this.settings.bookmarks = [];
+    await this.saveSettings();
+    return added;
   }
 
   openExplorer(view) {
@@ -6329,6 +6738,7 @@ module.exports = class YaziExplorer extends Plugin {
 
     const modal = new YaziModal(this.app, ws.getActiveFile(), this);
     modal.initialView = view || "files";
+    this.activeModal = modal;
     modal.open();
   }
 };
