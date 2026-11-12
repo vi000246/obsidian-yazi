@@ -9,7 +9,9 @@
 - **Owner**: Logan Lin (`manifest.json`)
 - **Status**: ACTIVE — living document
 - **Created**: 2026-09-18 12:18
-- **Last Updated**: 2026-10-15 10:30
+- **Last Updated**: 2026-11-12
+
+**Covers:** src/, styles.css, manifest.json, versions.json, .github/workflows/release.yml
 
 ## Change History
 
@@ -19,10 +21,11 @@
 | 2026-09-18 13:40 | code-sync | N/A | Esc/h/q refactor: OVERLAYS table replaces the if-ladder; results Esc leaves the search; landing-folder `h` returns to the list; `src/main.js` anchors re-pointed after the insertions |
 | 2026-09-18 14:45 | code-sync | N/A | Multi-select reaches the list views: `listSel` + the `LIST_REMOVE` table give bookmarks / views / tabs / most-visited the file view's `Space` `v` `V` `^a` `^r`, and `x` removes the whole selection behind one confirm. Fixed alongside: visual range never un-selected on pull-back (both views). Anchors re-pointed |
 | 2026-10-15 10:30 | code-sync | N/A | Storage split for multi-device vaults: optional bookmarks note (`settings.bookmarksNote`, line-level edits via `src/core/bookmarknote.js`), frecency + sort moved to per-device `local.json`, `onExternalSettingsChange` reloads `data.json`; `minAppVersion` 1.5.7 |
+| 2026-11-12 | maintenance（OB-407） | N/A | Checked against the one commit since (release 0.4.0: version bumps only): the release note now names 0.4.0 as the first with `minAppVersion` 1.5.7. Explicit Covers added |
 
 ## Summary
 
-Yazi Explorer is an Obsidian community plugin that replaces mouse-driven use of the sidebar file tree with a floating three-column (miller) browser modelled on `yazi` / `ranger`. One class, `YaziModal` (`src/main.js:584`), owns all interaction: a capture-phase `keydown` listener dispatches keys by *mode* × *view*, a layer stack makes `h` / `Esc` / `q` uniform across every list, and the right column renders a sanitised markdown preview. Everything that touches a specific vault's vocabulary — openers, row decorations, search facets, relation fields, saved views — is configuration in `data.json`, so the shipped code carries no vault-specific rules.
+Yazi Explorer is an Obsidian community plugin that replaces mouse-driven use of the sidebar file tree with a floating three-column (miller) browser modelled on `yazi` / `ranger`. One class, `YaziModal` (`src/main.js:645`), owns all interaction: a capture-phase `keydown` listener dispatches keys by *mode* × *view*, a layer stack makes `h` / `Esc` / `q` uniform across every list, and the right column renders a sanitised markdown preview. Everything that touches a specific vault's vocabulary — openers, row decorations, search facets, relation fields, saved views — is configuration in `data.json`, so the shipped code carries no vault-specific rules.
 
 ---
 
@@ -48,11 +51,11 @@ Yazi Explorer is an Obsidian community plugin that replaces mouse-driven use of 
 | Saved view | A named snapshot of a search's kind + words + facets + scope, re-run on open — conditions, not results (`src/main.js:2259`, `src/main.js:2311`) |
 | Frecency | Ranking of folders entered and files opened by count × time decay (`src/main.js:5833`) |
 | Outline | The headings of one note as a list; the preview scrolls to the heading under the cursor instead of re-rendering (`src/main.js:2083`, `src/main.js:2122`) |
-| Pending prefix | First key of a multi-key sequence (`g`, `c`, `,`, `r`, `'`, `sort`, `open`, `assign`, `vassign`) shown as a which-key card (`src/main.js:560`, `src/main.js:3748`) |
+| Pending prefix | First key of a multi-key sequence (`g`, `c`, `,`, `r`, `'`, `sort`, `open`, `assign`, `vassign`) shown as a which-key card (`src/main.js:637`, `src/main.js:3748`) |
 | Keymap alias | User `map A B` / `unmap A` text that re-routes one key to another sequence; keys inside the explorer are otherwise fixed (`src/core/keymap.js:68`, `src/main.js:4686`) |
 | Overlay | A transient thing stacked on the current place — pending prefix, suggestion list, help page (and its filter), input line, confirm bar, composer, selection. `Esc` dismisses the innermost open one; the set is a single ordered table (`src/main.js:149`) |
-| Selection | The rows a bulk action applies to. Two sets, never merged: `sel` holds file paths and survives folder changes (yazi's semantics); `listSel` holds list-row identities and is dropped whenever the view changes (`src/main.js:3099`, `src/main.js:3141`). `Esc` clears only the one belonging to the current view |
-| Row identity | What a list selection stores, since a row is not always a path: views by `viewDef.id`, tabs by the `leaf` object (two tabs can show one file), everything else by path. Must survive `buildList()`, so never an index (`src/main.js:3111`) |
+| Selection | The rows a bulk action applies to. Two sets, never merged: `sel` holds file paths and survives folder changes (yazi's semantics); `listSel` holds list-row identities and is dropped whenever the view changes (`src/main.js:722`, `src/main.js:3141`). `Esc` clears only the one belonging to the current view |
+| Row identity | What a list selection stores, since a row is not always a path: views by `viewDef.id`, tabs by the `leaf` object (two tabs can show one file), everything else by path. Must survive `buildList()`, so never an index (`src/main.js:2030`) |
 
 ### Domain Events
 None raised. The module *consumes* Obsidian workspace / vault events only (`file-open` for frecency at `src/main.js:5824`; vault `create/delete/rename` for re-render and index upkeep at `src/main.js:5770`).
@@ -114,11 +117,11 @@ Obsidian command / hotkey
 ### Components
 | Component | Responsibility | Interface |
 |---|---|---|
-| `YaziExplorer` plugin (`src/main.js:5490`) | Load/merge settings and user data, register 11 commands, keep frecency and the full-text index fresh, open the modal | Obsidian `Plugin` lifecycle (`onload` `src/main.js:5491`, `onunload` `src/main.js:5804`) |
-| `YaziModal` (`src/main.js:584`) | All interaction: key dispatch, views, layer stack, rendering, file operations | `new YaziModal(app, startFile, plugin)`; `initialView` set before `open()` (`src/main.js:5998`) |
+| `YaziExplorer` plugin (`src/main.js:5490`) | Load/merge settings and user data, register 11 commands, keep frecency and the full-text index fresh, open the modal | Obsidian `Plugin` lifecycle (`onload` `src/main.js:5830`, `onunload` `src/main.js:6149`) |
+| `YaziModal` (`src/main.js:645`) | All interaction: key dispatch, views, layer stack, rendering, file operations | `new YaziModal(app, startFile, plugin)`; `initialView` set before `open()` (`src/main.js:5998`) |
 | Layer stack (`src/main.js:1722`–`1745`) | Uniform back/dismiss/close semantics across every view | `pushLayer()` before entering a place; `popLayer()`; `goBackLayer()` (h), `leaveSubView()` (Esc at the place level), `forceClose()` (q) |
 | Search (`src/main.js:1102`, `1125`, `1084`) | Fuzzy over path + frontmatter aliases; folder fuzzy; full-text over an in-memory index; facets and scope narrow the pool before matching | `openSearch(kind)`, `buildSearchListRaw()`, `passFacets(f, content)` (`src/main.js:1643`) |
-| Preview (`src/main.js:4546`, `4531`, `4465`) | Plain text first, rendered markdown after a debounce; plugin blocks stripped before rendering; failure keeps plain text and says so | `renderFilePreview(el, file, {header})`; `stripPluginNoise` `src/main.js:5145`, `stripForRender` `src/main.js:5194` |
+| Preview (`src/main.js:4546`, `4531`, `4465`) | Plain text first, rendered markdown after a debounce; plugin blocks stripped before rendering; failure keeps plain text and says so | `renderFilePreview(el, file, {header})`; `stripPluginNoise` `src/main.js:5486`, `stripForRender` `src/main.js:5533` |
 | Openers (`src/main.js:2882`, `2812`, `2853`; `src/core/openers.js`) | Build the `O` menu for file vs folder on this platform; run system / reveal / command openers | `resolveOpeners(openers, item, plat, desktop)`, `buildCommand(o, vars)` |
 | Decorations (`src/core/decorate.js:93`; `src/main.js:5345`, `5115`) | Frontmatter → icon/title/group/status/priority/dim/overdue; drives row rendering and frontmatter-aware sorting | `decorate(fm, rules, names)`; `fmInfo(file)`; `sortFiles(list, cfg)` |
 | Relations (`src/core/relations.js:68`; `src/main.js:2173`, `2129`, `2412`) | Typed links from frontmatter with derived inverses; untyped links/backlinks folded; walked like folders | `collectRelations(file, rules, ctx)`; `relationGroupsFor(file)` (cached per modal); `enterRelation()` |
@@ -128,7 +131,7 @@ Obsidian command / hotkey
 | i18n (`src/i18n/index.js:36`) | English reference catalogue with per-call fallback strings; zh-TW overlay; locale from Obsidian or setting | `createTranslator(setting)` → `t(key, fallback, vars)` |
 
 ### Data Flow
-Synchronous and pull-based. A key press mutates modal state and calls `render()`, which repaints the three columns from state (`src/main.js:3802` region — `renderFiles`/`renderList` then `renderPreview`). Only the preview is asynchronous: `cachedRead` → plain `<pre>` → after `PREVIEW_RENDER_DELAY` a `MarkdownRenderer` pass replaces it, guarded by a `previewToken` so stale reads are dropped (`src/main.js:4782`). Full-text search reads from a `Map` built once per session and persisted to `text-index.json` (`src/main.js:5678`), kept fresh by vault events (`src/main.js:5770`). Settings and user data are one object saved through `saveData` (`src/main.js:61` merge on load).
+Synchronous and pull-based. A key press mutates modal state and calls `render()`, which repaints the three columns from state (`src/main.js:5057` region — `renderFiles`/`renderList` then `renderPreview`). Only the preview is asynchronous: `cachedRead` → plain `<pre>` → after `PREVIEW_RENDER_DELAY` a `MarkdownRenderer` pass replaces it, guarded by a `previewToken` so stale reads are dropped (`src/main.js:712`). Full-text search reads from a `Map` built once per session and persisted to `text-index.json` (`src/main.js:5678`), kept fresh by vault events (`src/main.js:5770`). Settings and user data are one object saved through `saveData` (`src/main.js:61` merge on load).
 
 ### Sequence Diagrams (key flows)
 ```
@@ -159,7 +162,7 @@ gr — relations walked like folders (src/main.js:2485)
 | Saved view `{id, name, key, kind, query, facets[], scopePath}` | `settings.views` | Created by `s` in search results; same name replaces (`saveView`) |
 | Frecency record (path → visits, scored by `frecencyScore`) and sort | `plugin.data` → `local.json` (per device, not synced) | Bumped on `file-open` and `gotoFolder`; pruned to `FRECENCY_KEEP`; copied once from legacy `data.json` fields on upgrade (`loadLocal`) |
 | Full-text index `Map<path, text>` + `text-index.json` | Plugin | Built on first `gt`, persisted to the plugin folder, refreshed by vault events; size shown/clearable in settings |
-| Layer snapshot | Modal (in-memory) | Pushed on entering a place, popped by h/Esc, capped at `LAYER_MAX` (`src/main.js:132`); dies with the modal |
+| Layer snapshot | Modal (in-memory) | Pushed on entering a place, popped by h/Esc, capped at `LAYER_MAX` (`src/main.js:167`); dies with the modal |
 
 ### Schema (settings — `src/settings/defaults.js:229`)
 ```yaml
@@ -207,7 +210,7 @@ This module exposes no HTTP API. Its public surface is Obsidian commands and the
 | `open-outline`, `open-relations` | outline / relations of the active note |
 | `search-text`, `search-file`, `search-dir` | straight into that search's composer |
 
-A list opened by command is the bottom layer: `Esc`/`q` close, `h` stays (`src/main.js:1768`; `opening` flag suppresses the push in `src/main.js:1722`).
+A list opened by command is the bottom layer: `Esc`/`q` close, `h` stays (`src/main.js:2277`; `opening` flag suppresses the push in `src/main.js:1722`).
 
 ### Inter-plugin surface
 `app.plugins.plugins["yazi-explorer"]` exposes `views()`, `bookmarks()`, `frecencyRanked()`, `t()`; none are documented as stable.
@@ -216,7 +219,7 @@ A list opened by command is the bottom layer: `Esc`/`q` close, `h` stays (`src/m
 No coded errors. Failures surface as `Notice` text (translated) and `console.error("[yazi-explorer] …")`; preview render failure keeps plain text and prints a banner (`src/main.js:4716` failure path).
 
 ### Versioning Strategy
-`manifest.json` `version` ↔ git tag without `v`; `versions.json` maps plugin version → `minAppVersion` (1.4.0 up to 0.3.1; 1.5.7 from the next release, written by `npm version`). Release assets `main.js`, `manifest.json`, `styles.css` built by `.github/workflows/release.yml` on tag push (runs `npm ci`, `npm test`, `npm run build`).
+`manifest.json` `version` ↔ git tag without `v`; `versions.json` maps plugin version → `minAppVersion` (1.4.0 up to 0.3.1; 1.5.7 from 0.4.0, written by `npm version`). Release assets `main.js`, `manifest.json`, `styles.css` built by `.github/workflows/release.yml` on tag push (runs `npm ci`, `npm test`, `npm run build`).
 
 ---
 
@@ -224,7 +227,7 @@ No coded errors. Failures surface as `Notice` text (translated) and `console.err
 
 | Category | Target | Measurement | How Achieved |
 |---|---|---|---|
-| Performance | Cursor moves stay instant while holding `j`; preview never blocks navigation | Manual; `searchCost` timing in modal | Preview debounced by `PREVIEW_RENDER_DELAY` with token cancellation; preview text capped at `PREVIEW_MAX_CHARS`/`PREVIEW_MAX_LINES` (`src/main.js:122`); search re-run throttled when the last run exceeded its budget; relation groups cached per file (`src/main.js:2202`) |
+| Performance | Cursor moves stay instant while holding `j`; preview never blocks navigation | Manual; `searchCost` timing in modal | Preview debounced by `PREVIEW_RENDER_DELAY` with token cancellation; preview text capped at `PREVIEW_MAX_CHARS`/`PREVIEW_MAX_LINES` (`src/main.js:158`); search re-run throttled when the last run exceeded its budget; relation groups cached per file (`src/main.js:2202`) |
 | Security | Browsing executes nothing from the vault; no shell injection via file names | `tests/preview-sanitize-test.js`, `tests/openers-test.js` | `stripPluginNoise` + `stripForRender` before `MarkdownRenderer` (`src/main.js:5145`, `4941`); openers spawn with argv arrays (`src/main.js:2919`); no network, no `eval`, no `innerHTML` |
 | Compatibility | Desktop + mobile, Obsidian ≥ 1.5.7 (`onExternalSettingsChange`) | Manifest `isDesktopOnly: false` | `Platform.isDesktopApp` guards around `electron`/`child_process`; legacy `renderMarkdown` fallback |
 | Robustness | A broken panel or missing helper must not blank the preview | `tests/fmpanel-test.js`, `tests/undefined-calls-test.js` | try/catch around the frontmatter panel; static scan for undefined function calls in `src/` |
@@ -236,8 +239,8 @@ No coded errors. Failures surface as `Notice` text (translated) and `console.err
 
 | Concern | Choice | Alternatives | Rationale |
 |---|---|---|---|
-| Key capture | `window` `keydown` in capture phase, `stopPropagation` on handled keys (`src/main.js:3302`) | Obsidian `Scope` | Several popular plugins register document-level handlers that fire before a modal's `Scope`; capture on `window` runs first |
-| Rendering | DOM API (`createDiv/createSpan`), no `innerHTML` | Templates / innerHTML | Descriptions contain `<Space>`; search needles are user input (`hilite`, `src/main.js:4445` region) |
+| Key capture | `window` `keydown` in capture phase, `stopPropagation` on handled keys (`src/main.js:3802`) | Obsidian `Scope` | Several popular plugins register document-level handlers that fire before a modal's `Scope`; capture on `window` runs first |
+| Rendering | DOM API (`createDiv/createSpan`), no `innerHTML` | Templates / innerHTML | Descriptions contain `<Space>`; search needles are user input (`hilite`, `src/main.js:4861` region) |
 | Preview | `MarkdownRenderer` on sanitised text | Raw text only / iframe | Tables and headings are why the preview exists; sanitising keeps `dataviewjs`/`meta-bind` from running |
 | Module split | One CJS `main.js` + pure `core/*` modules, esbuild bundle | Full TS/ESM refactor | Core logic testable in Node without Obsidian; `tests/_probe.js:32` appends a `__test` export to the built file so internals need no production exports |
 | Persistence | `data.json` for synced settings; `local.json` for per-device frecency/sort; optional bookmarks note | Single `data.json` (≤ 0.3) | A whole-file `data.json` written from memory let one device's stale state overwrite the other's bookmarks, and frecency rewrote it on every file open; per-line note edits merge in git, per-device state never syncs |
@@ -311,7 +314,7 @@ Dev: `npm run dev` + `.env.local` `VAULT_PLUGIN_DIR` copies the build into a vau
 
 ## Open Questions
 
-- [ ] Promote `AUTO_TAG_PREFIXES` (`src/main.js:184`) to a setting; it is the last vault-specific literal in shipped code.
+- [ ] Promote `AUTO_TAG_PREFIXES` (`src/main.js:279`) to a setting; it is the last vault-specific literal in shipped code.
 - [ ] `schemaVersion` exists but no migrator consumes it — decide the first real migration path before 1.0.
 - [ ] Show the relation summary strip in the file view preview as well (currently relations view only).
 - [ ] Allow re-folding an expanded untyped group (currently per-centre expansion persists for the modal's lifetime).
